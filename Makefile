@@ -21,8 +21,12 @@ main:
 	$(PYTHON) main.py
 
 profile:
-	$(PYTHON) -m cProfile -s tottime main.py
+	$(PYTHON) -m cProfile -s tottime -o program.prof main.py
 
 visualizeProfile:
-	$(PYTHON) -m cProfile -o program.prof main.py
 	snakeviz program.prof
+
+tunaProfiler:
+	tuna program.prof
+
+
