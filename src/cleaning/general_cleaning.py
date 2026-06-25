@@ -1,6 +1,7 @@
 import html
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -25,11 +26,14 @@ class GeneralCleaner:
             print(f"No JSON files found in {self.raw_dir}")
             return
 
-        for filepath in files:
-            try:
-                self._clean_file(filepath)
-            except Exception as e:
-                print(f"  [ERROR] Failed to clean {filepath.name}: {e}")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(self._clean_file, f): f for f in files}
+            for future in as_completed(futures):
+                f = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"  [ERROR] Failed to clean {f.name}: {e}")
 
     def _clean_file(self, filepath: Path) -> None:
         print(f"\n  Cleaning: {filepath.name}")

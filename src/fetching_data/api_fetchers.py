@@ -2,6 +2,7 @@ import json
 import os
 import re
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -218,15 +219,23 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
     _save_json(ids_data, "Hacker News (New Stories)")
 
     print(f"  Found {len(ids_data)} story IDs, fetching top {HN_TOP_STORIES_TO_FETCH}")
+    story_ids = ids_data[:HN_TOP_STORIES_TO_FETCH]
+
     items = []
-    for story_id in ids_data[:HN_TOP_STORIES_TO_FETCH]:
-        item = fetcher.request(f"/v0/item/{story_id}.json")
-        if item and isinstance(item, dict):
-            items.append(item)
-            title = item.get("title", "N/A")
-            url = item.get("url", f"https://news.ycombinator.com/item?id={story_id}")
-            print(f"  [{story_id}] {title}")
-            print(f"         {url}")
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        fut_to_id = {
+            executor.submit(fetcher.request, f"/v0/item/{sid}.json"): sid
+            for sid in story_ids
+        }
+        for future in as_completed(fut_to_id):
+            sid = fut_to_id[future]
+            item = future.result()
+            if item and isinstance(item, dict):
+                items.append(item)
+                title = item.get("title", "N/A")
+                url = item.get("url", f"https://news.ycombinator.com/item?id={sid}")
+                print(f"  [{sid}] {title}")
+                print(f"         {url}")
 
     if items:
         _save_json(items, "Hacker News (Item Detail)")
@@ -242,8 +251,10 @@ def main() -> None:
         if not s.get("hn_item_fetch") and not s.get("hn_id_list")
     ]
 
-    for source in regular_sources:
-        fetch_api_source(source)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(fetch_api_source, s) for s in regular_sources]
+        for future in as_completed(futures):
+            future.result()
 
     if hn_source:
         hn_headers = hn_source.get("headers", {}).copy()

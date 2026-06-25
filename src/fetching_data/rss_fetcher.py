@@ -1,5 +1,6 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -100,8 +101,10 @@ def main() -> None:
         print("No RSS sources found in config.")
         return
 
-    for source in rss_sources:
-        fetch_rss_feed(source)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(fetch_rss_feed, s) for s in rss_sources]
+        for future in as_completed(futures):
+            future.result()
 
 
 if __name__ == "__main__":
