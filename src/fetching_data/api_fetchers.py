@@ -1,5 +1,8 @@
+import json
 import os
+import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -10,6 +13,7 @@ from general_api_fetcher import GeneralApiFetcher
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 HN_TOP_STORIES_TO_FETCH = 10
 
@@ -18,6 +22,25 @@ def load_sources() -> list[dict]:
     with open(CONFIG_PATH, "r") as f:
         data = yaml.safe_load(f)
     return data.get("sources", [])
+
+
+def _sanitize_name(name: str) -> str:
+    name = name.lower()
+    name = re.sub(r'[^\w\s-]', '', name)
+    name = re.sub(r'[-\s]+', '_', name)
+    return name.strip('_')
+
+
+def _save_json(data, source_name: str) -> Path | None:
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    filename = _sanitize_name(source_name) + ".json"
+    filepath = raw_dir / filename
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"  [SAVED] {filepath}")
+    return filepath
 
 
 def fetch_api_source(source: dict) -> None:
@@ -48,11 +71,62 @@ def fetch_api_source(source: dict) -> None:
         if raw is None:
             return
         _print_xml_source(raw)
+        entries = _xml_entries_to_dicts(raw)
+        if entries:
+            _save_json(entries, name)
     else:
         data = fetcher.request(endpoint, params=params)
         if data is None:
             return
         _print_json_source(data)
+        _save_json(data, name)
+
+
+def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
+    try:
+        root = ET.fromstring(raw_xml)
+    except ET.ParseError:
+        return []
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    entries = root.findall(".//atom:entry", ns)
+    if not entries:
+        entries = root.findall(".//entry")
+
+    result = []
+    for entry in entries:
+        item = {}
+        for field in ("id", "title", "summary", "published", "updated"):
+            el = entry.find(f"atom:{field}", ns)
+            if el is None:
+                el = entry.find(field)
+            if el is not None and el.text:
+                item[field] = el.text.strip()
+
+        authors = entry.findall("atom:author", ns) or entry.findall("author")
+        if authors:
+            names = []
+            for author in authors:
+                name_el = author.find("atom:name", ns) or author.find("name")
+                if name_el is not None and name_el.text:
+                    names.append(name_el.text.strip())
+            if names:
+                item["authors"] = names
+
+        links = entry.findall("atom:link", ns) or entry.findall("link")
+        for link in links:
+            if link.get("rel", "alternate") == "alternate":
+                item["link"] = link.get("href", "")
+                break
+        if "link" not in item and links:
+            item["link"] = links[0].get("href", "")
+
+        categories = entry.findall("atom:category", ns) or entry.findall("category")
+        if categories:
+            item["categories"] = [c.get("term", "") for c in categories if c.get("term")]
+
+        result.append(item)
+
+    return result
 
 
 def _print_xml_source(raw: str) -> None:
@@ -141,14 +215,21 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
         print("  [ERROR] Could not fetch HN story IDs")
         return
 
+    _save_json(ids_data, "Hacker News (New Stories)")
+
     print(f"  Found {len(ids_data)} story IDs, fetching top {HN_TOP_STORIES_TO_FETCH}")
+    items = []
     for story_id in ids_data[:HN_TOP_STORIES_TO_FETCH]:
         item = fetcher.request(f"/v0/item/{story_id}.json")
         if item and isinstance(item, dict):
+            items.append(item)
             title = item.get("title", "N/A")
             url = item.get("url", f"https://news.ycombinator.com/item?id={story_id}")
             print(f"  [{story_id}] {title}")
             print(f"         {url}")
+
+    if items:
+        _save_json(items, "Hacker News (Item Detail)")
 
 
 def main() -> None:

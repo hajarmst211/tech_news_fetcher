@@ -1,3 +1,6 @@
+import json
+import re
+from datetime import datetime
 from pathlib import Path
 
 import feedparser
@@ -5,12 +8,51 @@ import yaml
 from general_api_fetcher import GeneralApiFetcher
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_sources() -> list[dict]:
     with open(CONFIG_PATH, "r") as f:
         data = yaml.safe_load(f)
     return data.get("sources", [])
+
+
+def _sanitize_name(name: str) -> str:
+    name = name.lower()
+    name = re.sub(r'[^\w\s-]', '', name)
+    name = re.sub(r'[-\s]+', '_', name)
+    return name.strip('_')
+
+
+def _save_json(data, source_name: str) -> Path | None:
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    filename = _sanitize_name(source_name) + ".json"
+    filepath = raw_dir / filename
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"  [SAVED] {filepath}")
+    return filepath
+
+
+def _entry_to_dict(entry) -> dict:
+    item = {
+        "title": entry.get("title"),
+        "link": entry.get("link"),
+        "published": entry.get("published"),
+        "updated": entry.get("updated"),
+        "summary": entry.get("summary"),
+        "id": entry.get("id"),
+    }
+    if "content" in entry:
+        item["content"] = [
+            {"type": c.get("type"), "value": c.get("value")}
+            for c in entry.content
+        ]
+    if "tags" in entry:
+        item["tags"] = [t.get("term") for t in entry.tags]
+    return item
 
 
 def fetch_rss_feed(source: dict) -> None:
@@ -45,6 +87,9 @@ def fetch_rss_feed(source: dict) -> None:
         print(f"       {link}")
         if published:
             print(f"       Published: {published}")
+
+    entries_data = [_entry_to_dict(e) for e in feed.entries]
+    _save_json(entries_data, name)
 
 
 def main() -> None:

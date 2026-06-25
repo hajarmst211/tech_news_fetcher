@@ -21,3 +21,7 @@ Aggregates tech news from the following sources:
 - [Dark Reading](https://www.darkreading.com) — `/rss.xml`
 - [Schneier on Security](https://www.schneier.com) — `/feed/atom/`
 - [Packet Storm](https://rss.packetstormsecurity.com) — `/`
+
+
+
+Primary Bottleneck: External subprocess execution. Over 99.5% of the program's runtime is spent waiting for external commands to finish.
