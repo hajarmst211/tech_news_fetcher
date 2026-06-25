@@ -1,0 +1,424 @@
+sources:
+  # ==========================================
+  # PART 1: APIs (JSON/XML Response)
+  # ==========================================
+
+  - name: "Dev.to (.NET)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "dotnet"
+      per_page: 10
+
+  - name: "Dev.to (C#)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "csharp"
+      per_page: 10
+
+  - name: "Dev.to (Java)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "java"
+      per_page: 10
+
+  - name: "Dev.to (Spring Boot)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "springboot"
+      per_page: 10
+
+  - name: "Dev.to (Android)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "android"
+      per_page: 10
+
+  - name: "Dev.to (Flutter)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "flutter"
+      per_page: 10
+
+  - name: "Dev.to (Dart)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "dart"
+      per_page: 10
+
+  - name: "Dev.to (AI)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "ai"
+      per_page: 10
+
+  - name: "Dev.to (Machine Learning)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "machinelearning"
+      per_page: 10
+
+  - name: "Dev.to (Data Science)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "datascience"
+      per_page: 10
+
+  - name: "Dev.to (Networking)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "networking"
+      per_page: 10
+
+  - name: "Dev.to (IoT)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "iot"
+      per_page: 10
+
+  - name: "Dev.to (Security)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "security"
+      per_page: 10
+
+  - name: "Dev.to (Cybersecurity)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "cybersecurity"
+      per_page: 10
+
+  - name: "Dev.to (Cryptography)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "cryptography"
+      per_page: 10
+
+  - name: "Dev.to (SSH)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "ssh"
+      per_page: 10
+
+  - name: "Dev.to (Protocols)"
+    type: "api"
+    method: "GET"
+    base_url: "https://dev.to"
+    endpoint: "/api/articles"
+    headers:
+      Accept: "application/json"
+    params:
+      tag: "protocols"
+      per_page: 10
+
+  - name: "ArXiv (AI)"
+    type: "api"
+    method: "GET"
+    base_url: "http://export.arxiv.org"
+    endpoint: "/api/query"
+    headers:
+      Accept: "application/xml"
+    params:
+      search_query: "cat:cs.AI"
+      sortBy: "submittedDate"
+      sortOrder: "descending"
+      max_results: 10
+    response_type: "xml"
+
+  - name: "ArXiv (Machine Learning)"
+    type: "api"
+    method: "GET"
+    base_url: "http://export.arxiv.org"
+    endpoint: "/api/query"
+    headers:
+      Accept: "application/xml"
+    params:
+      search_query: "cat:cs.LG"
+      sortBy: "submittedDate"
+      sortOrder: "descending"
+      max_results: 10
+    response_type: "xml"
+
+  - name: "ArXiv (Networks)"
+    type: "api"
+    method: "GET"
+    base_url: "http://export.arxiv.org"
+    endpoint: "/api/query"
+    headers:
+      Accept: "application/xml"
+    params:
+      search_query: "cat:cs.NI"
+      sortBy: "submittedDate"
+      sortOrder: "descending"
+      max_results: 10
+    response_type: "xml"
+
+  - name: "Hacker News (New Stories)"
+    type: "api"
+    hn_id_list: true
+    method: "GET"
+    base_url: "https://hacker-news.firebaseio.com"
+    endpoint: "/v0/newstories.json"
+    headers:
+      Accept: "application/json"
+    params:
+      print: "pretty"
+    note: "Returns IDs. The code will fetch details for the top stories."
+
+  - name: "Hacker News (Item Detail)"
+    type: "api"
+    hn_item_fetch: true
+    method: "GET"
+    base_url: "https://hacker-news.firebaseio.com"
+    endpoint: "/v0/item/{item_id}.json"
+    headers:
+      Accept: "application/json"
+
+  - name: "Reddit (.NET)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.reddit.com"
+    endpoint: "/r/dotnet/.rss"
+    headers:
+      User-Agent: "script:my_rss_reader:v1.0.0 (by /u/Available_Orange2529)"
+
+  - name: "Reddit (Flutter)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.reddit.com"
+    endpoint: "/r/flutterdev/.rss"
+    headers:
+      User-Agent: "script:my_rss_reader:v1.0.0 (by /u/Available_Orange2529)"
+
+  - name: "Reddit (NetSec)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.reddit.com"
+    endpoint: "/r/netsec/.rss"
+    headers:
+      User-Agent: "script:my_rss_reader:v1.0.0 (by /u/Available_Orange2529)"
+
+  - name: "GitHub (Flutter Releases)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/repos/flutter/flutter/releases/latest"
+    headers:
+      Accept: "application/json"
+
+  - name: "GitHub (.NET Runtime Releases)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/repos/dotnet/runtime/releases/latest"
+    headers:
+      Accept: "application/json"
+
+  - name: "GitHub (PowerShell Releases)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/repos/PowerShell/PowerShell/releases/latest"
+    headers:
+      Accept: "application/json"
+
+  - name: "National Vulnerability Database (SSH)"
+    type: "api"
+    method: "GET"
+    base_url: "https://services.nvd.nist.gov"
+    endpoint: "/rest/json/cves/2.0"
+    headers:
+      Accept: "application/json"
+    params:
+      keywordSearch: "SSH"
+      resultsPerPage: 20
+    env_api_key: "NVD_API_KEY"
+
+  - name: "National Vulnerability Database (Cryptography)"
+    type: "api"
+    method: "GET"
+    base_url: "https://services.nvd.nist.gov"
+    endpoint: "/rest/json/cves/2.0"
+    headers:
+      Accept: "application/json"
+    params:
+      keywordSearch: "Cryptography"
+      resultsPerPage: 20
+    env_api_key: "NVD_API_KEY"
+
+  - name: "National Vulnerability Database (Kubernetes)"
+    type: "api"
+    method: "GET"
+    base_url: "https://services.nvd.nist.gov"
+    endpoint: "/rest/json/cves/2.0"
+    headers:
+      Accept: "application/json"
+    params:
+      keywordSearch: "Kubernetes"
+      resultsPerPage: 20
+    env_api_key: "NVD_API_KEY"
+
+  - name: "CISA (Known Exploited Vulnerabilities)"
+    type: "api"
+    method: "GET"
+    base_url: "https://www.cisa.gov"
+    endpoint: "/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    headers:
+      Accept: "application/json"
+
+  # ==========================================
+  # PART 2: RSS Feeds (XML Response)
+  # ==========================================
+  - name: "InfoQ (.NET)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/dotnet/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "DZone (Java)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feeds.dzone.com"
+    endpoint: "/java"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "Microsoft .NET Blog"
+    type: "rss"
+    method: "GET"
+    base_url: "https://devblogs.microsoft.com"
+    endpoint: "/dotnet/feed/"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "VentureBeat (AI)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://venturebeat.com"
+    endpoint: "/category/ai/feed/"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "Light Reading (Telecom)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.lightreading.com"
+    endpoint: "/rss.xml"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "The Hacker News (Security)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feeds.feedburner.com"
+    endpoint: "/TheHackersNews"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "Dark Reading (Security)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.darkreading.com"
+    endpoint: "/rss.xml"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "Schneier on Security"
+    type: "rss"
+    method: "GET"
+    base_url: "https://www.schneier.com"
+    endpoint: "/feed/atom/"
+    headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "Packet Storm (Security & Protocols)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://rss.packetstormsecurity.com"
+    endpoint: "/"
+    ssl_verify: false
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml, */*"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
