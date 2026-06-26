@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech News Aggregator Pipeline</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden">
+
+    <!-- Top Navbar -->
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center shrink-0 gap-4">
+        <div class="flex items-center gap-3">
+            <div class="bg-brand-600 p-2 rounded-lg text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 4a2 2 0 00-2-2m-2 3h4m-4 3h4m-4 4h3m-6 0a1 1 0 001-1v-4a1 1 0 00-1-1m-1 4h.01M9 16h.01M9 20h.01M12 16h.01M12 12h.01M12 10h.01M12 14h.01"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    Tech Pipeline Dashboard
+                    <span class="text-xs bg-brand-500/10 text-brand-100 border border-brand-500/30 px-2 py-0.5 rounded-full font-normal">Active</span>
+                </h1>
+                <p class="text-xs text-slate-400">Unified view of fetched, structured, and cleaned tech news</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 flex-wrap">
+            <!-- Date Picker for Local Server -->
+            <div class="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                <span class="text-xs text-slate-400">Date:</span>
+                <input type="text" id="pipeline-date" value="2026-06-26" class="bg-transparent border-none text-xs text-slate-100 font-mono w-24 focus:outline-none focus:ring-0">
+            </div>
+
+            <!-- Fetch Button -->
+            <button onclick="autoFetchData()" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg transition-all flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
+                Load From Server
+            </button>
+
+            <!-- File Upload / Browse -->
+            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                Browse Cleaned Files
+                <input type="file" id="local-files" multiple accept=".json" onchange="handleFileSelect(event)" class="hidden">
+            </label>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar / Category Filter & Stats -->
+        <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col p-4 shrink-0 overflow-y-auto gap-6 hidden md:flex">
+            <!-- Data Loader Stats -->
+            <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Loaded Summary</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-850">
+                        <p class="text-xs text-slate-400">Articles</p>
+                        <p id="stat-articles" class="text-xl font-bold text-slate-100 font-mono">0</p>
+                    </div>
+                    <div class="bg-slate-950 p-3 rounded-lg border border-slate-850">
+                        <p class="text-xs text-slate-400">Sources</p>
+                        <p id="stat-sources" class="text-xl font-bold text-slate-100 font-mono">0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Category Filters -->
+            <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Categories</h2>
+                <nav class="space-y-1" id="category-menu">
+                    <button onclick="setCategoryFilter('all')" data-cat="all" class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg bg-brand-500/10 text-brand-100 border border-brand-500/20 active-cat">
+                        <span>All Categories</span>
+                        <span id="badge-cat-all" class="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-[10px]">0</span>
+                    </button>
+                    <button onclick="setCategoryFilter('security')" data-cat="security" class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-all">
+                        <span class="flex items-center gap-2">🛡️ Cybersecurity</span>
+                        <span id="badge-cat-security" class="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-[10px]">0</span>
+                    </button>
+                    <button onclick="setCategoryFilter('development')" data-cat="development" class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-all">
+                        <span class="flex items-center gap-2">💻 Software Dev</span>
+                        <span id="badge-cat-development" class="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-[10px]">0</span>
+                    </button>
+                    <button onclick="setCategoryFilter('ai')" data-cat="ai" class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-all">
+                        <span class="flex items-center gap-2">🤖 AI & Data Science</span>
+                        <span id="badge-cat-ai" class="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-[10px]">0</span>
+                    </button>
+                    <button onclick="setCategoryFilter('infrastructure')" data-cat="infrastructure" class="w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-all">
+                        <span class="flex items-center gap-2">🌐 Infrastructure / IoT</span>
+                        <span id="badge-cat-infrastructure" class="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-[10px]">0</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Upload Drop Zone Card -->
+            <div id="drop-zone" class="mt-auto border border-dashed border-slate-700 hover:border-brand-500 rounded-lg p-4 text-center transition-all bg-slate-950/40">
+                <svg class="mx-auto h-8 w-8 text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <p class="text-xs text-slate-400">Drag & drop files here to load instantly offline</p>
+            </div>
+        </aside>
+
+        <!-- Right Content / Feed Area -->
+        <main class="flex-1 flex flex-col overflow-hidden bg-slate-950">
+            <!-- Filter Bar / Search -->
+            <div class="bg-slate-900 border-b border-slate-800 p-4 flex flex-col sm:flex-row gap-3 justify-between items-center shrink-0">
+                <div class="relative w-full sm:w-96">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </span>
+                    <input type="text" id="search-input" oninput="renderFilteredList()" placeholder="Filter articles, releases, CVEs..." class="w-full bg-slate-950 border border-slate-800 text-slate-100 text-xs pl-9 pr-4 py-2 rounded-lg focus:outline-none focus:border-brand-500 transition-all">
+                </div>
+
+                <div class="flex items-center gap-3 shrink-0">
+                    <span class="text-xs text-slate-400">Sort:</span>
+                    <select id="sort-order" onchange="renderFilteredList()" class="bg-slate-950 border border-slate-800 text-slate-100 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-brand-500">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="source">By Source Name</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Zero State (Moved outside the feed container to prevent deletion) -->
+            <div id="zero-state" class="text-center py-24 hidden shrink-0">
+                <div class="inline-flex p-4 rounded-full bg-slate-900 border border-slate-800 text-slate-500 mb-4">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                </div>
+                <h3 class="text-lg font-bold text-slate-200">No Pipeline Data Found</h3>
+                <p class="text-xs text-slate-400 max-w-sm mx-auto mt-2 mb-6">Modify filters/search keyword, or load different cleaned pipeline files.</p>
+            </div>
+
+            <!-- Articles Feed -->
+            <div id="articles-container" class="flex-1 overflow-y-auto p-6 space-y-4">
+                <!-- Initial instruction state prior to data loads -->
+                <div id="intro-state" class="text-center py-24">
+                    <div class="inline-flex p-4 rounded-full bg-slate-900 border border-slate-800 text-slate-500 mb-4">
+                        <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-200">Awaiting Pipeline Data</h3>
+                    <p class="text-xs text-slate-400 max-w-sm mx-auto mt-2 mb-6">Select your local date and fetch from server, or drop your `data/cleaned` files here directly.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Script Operations -->
+    <script>
+        const PIPELINE_FILES = [
+            "arxiv_ai.json", "arxiv_machine_learning.json", "arxiv_networks.json",
+            "cisa_known_exploited_vulnerabilities.json", "dark_reading_security.json",
+            "devto_ai.json", "devto_android.json", "devto_c.json", "devto_cybersecurity.json",
+            "devto_dart.json", "devto_data_science.json", "devto_flutter.json",
+            "devto_java.json", "devto_machine_learning.json", "devto_net.json",
+            "devto_protocols.json", "devto_security.json", "devto_spring_boot.json",
+            "devto_ssh.json", "dzone_java.json", "github_flutter_releases.json",
+            "github_net_runtime_releases.json", "github_powershell_releases.json",
+            "hacker_news_item_detail.json", "hacker_news_new_stories.json",
+            "infoq_net.json", "light_reading_telecom.json", "microsoft_net_blog.json",
+            "national_vulnerability_database_cryptography.json", "national_vulnerability_database_kubernetes.json",
+            "national_vulnerability_database_ssh.json", "reddit_flutter.json",
+            "schneier_on_security.json", "the_hacker_news_security.json", "venturebeat_ai.json"
+        ];
+
+        let database = []; 
+        let sourcesLoaded = new Set();
+        let activeCategory = 'all';
+
+        // 1. Off-line file drag and drop handler
+        const dropZone = document.getElementById('drop-zone');
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-brand-500', 'bg-brand-500/5');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-brand-500', 'bg-brand-500/5');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            processFileList(files);
+        });
+
+        function handleFileSelect(e) {
+            processFileList(e.target.files);
+        }
+
+        function processFileList(files) {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (!file.name.endsWith('.json')) continue;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const parsedData = JSON.parse(event.target.result);
+                        integrateData(parsedData, file.name);
+                    } catch (err) {
+                        console.error("Failed to parse local JSON file: ", file.name, err);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // 2. Local-server active fetcher
+        async function autoFetchData() {
+            const dateStr = document.getElementById('pipeline-date').value.trim();
+            if (!dateStr) return alert("Please specify a valid YYYY-MM-DD date");
+
+            database = [];
+            sourcesLoaded.clear();
+            updateUIMetrics();
+
+            let loadCount = 0;
+            for (const file of PIPELINE_FILES) {
+                const url = `./data/cleaned/${dateStr}/${file}`;
+                try {
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await JSON.parse(await response.text());
+                        integrateData(data, file);
+                        loadCount++;
+                    }
+                } catch (e) {
+                    // Gracefully ignore CORS errors or 404s for missing files
+                }
+            }
+
+            if (loadCount === 0) {
+                alert(`No clean data found for folder: "./data/cleaned/${dateStr}/"\nMake sure you are running a local web server (e.g., "python3 -m http.server") from the project root.`);
+            }
+        }
+
+        // 3. Normalizer & Database Integrator
+        function getCategory(filename) {
+            const name = filename.toLowerCase();
+            if (name.includes('security') || name.includes('vulnerability') || name.includes('cisa') || name.includes('schneier') || name.includes('netsec')) {
+                return 'security';
+            }
+            if (name.includes('ai') || name.includes('data_science') || name.includes('machine_learning') || name.includes('venturebeat')) {
+                return 'ai';
+            }
+            if (name.includes('networks') || name.includes('iot') || name.includes('ssh') || name.includes('protocols') || name.includes('telecom')) {
+                return 'infrastructure';
+            }
+            return 'development'; // Default fallback
+        }
+
+        function integrateData(payload, fileName) {
+            const cleanedFileName = fileName.replace('.json', '');
+            sourcesLoaded.add(cleanedFileName);
+
+            const items = Array.isArray(payload) ? payload : [payload];
+            
+            items.forEach(rawItem => {
+                if (typeof rawItem !== 'object' || rawItem === null) return;
+
+                const title = rawItem.title || rawItem.id || rawItem.cveID || rawItem.vulnerabilityName || "N/A";
+                const link = rawItem.link || rawItem.url || rawItem.html_url || (rawItem.notes) || "#";
+                const summary = rawItem.summary || rawItem.shortDescription || (rawItem.descriptions && rawItem.descriptions[0]?.value) || "";
+                const date = rawItem.published || rawItem.updated || "";
+
+                database.push({
+                    title: title.toString().trim(),
+                    link: link,
+                    summary: summary.toString().trim(),
+                    published: date,
+                    source: cleanedFileName.replace(/_/g, ' ').toUpperCase(),
+                    category: getCategory(fileName),
+                    raw: rawItem
+                });
+            });
+
+            // Remove duplicate articles if any exist across topics
+            database = database.filter((val, idx, self) => 
+                idx === self.findIndex((t) => t.title === val.title && t.link === val.link)
+            );
+
+            updateUIMetrics();
+            renderFilteredList();
+        }
+
+        // 4. State updates and Rendering Engine
+        function updateUIMetrics() {
+            document.getElementById('stat-articles').innerText = database.length;
+            document.getElementById('stat-sources').innerText = sourcesLoaded.size;
+
+            // Categories Counter badges
+            document.getElementById('badge-cat-all').innerText = database.length;
+            document.getElementById('badge-cat-security').innerText = database.filter(i => i.category === 'security').length;
+            document.getElementById('badge-cat-development').innerText = database.filter(i => i.category === 'development').length;
+            document.getElementById('badge-cat-ai').innerText = database.filter(i => i.category === 'ai').length;
+            document.getElementById('badge-cat-infrastructure').innerText = database.filter(i => i.category === 'infrastructure').length;
+        }
+
+        function setCategoryFilter(cat) {
+            activeCategory = cat;
+            
+            // Adjust styling in sidebar list
+            const menuButtons = document.querySelectorAll('#category-menu button');
+            menuButtons.forEach(btn => {
+                const btnCat = btn.getAttribute('data-cat');
+                if (btnCat === activeCategory) {
+                    btn.className = "w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg bg-brand-500/10 text-brand-100 border border-brand-500/20 active-cat";
+                } else {
+                    btn.className = "w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 transition-all";
+                }
+            });
+
+            renderFilteredList();
+        }
+
+        function renderFilteredList() {
+            const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
+            const sortOrder = document.getElementById('sort-order').value;
+            const container = document.getElementById('articles-container');
+            const zeroState = document.getElementById('zero-state');
+            const introState = document.getElementById('intro-state');
+
+            // Hide the initial instructions panel since we are compiling data
+            if (introState) {
+                introState.classList.add('hidden');
+            }
+
+            let filtered = database;
+
+            // Apply category filter
+            if (activeCategory !== 'all') {
+                filtered = filtered.filter(i => i.category === activeCategory);
+            }
+
+            // Apply search filter
+            if (searchVal) {
+                filtered = filtered.filter(i => 
+                    i.title.toLowerCase().includes(searchVal) || 
+                    i.summary.toLowerCase().includes(searchVal) ||
+                    i.source.toLowerCase().includes(searchVal)
+                );
+            }
+
+            // Safe Sort Logic (prevents NaN comparison failures)
+            if (sortOrder === 'newest') {
+                filtered.sort((a, b) => {
+                    const dateA = a.published ? new Date(a.published).getTime() : 0;
+                    const dateB = b.published ? new Date(b.published).getTime() : 0;
+                    return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+                });
+            } else if (sortOrder === 'oldest') {
+                filtered.sort((a, b) => {
+                    const dateA = a.published ? new Date(a.published).getTime() : 0;
+                    const dateB = b.published ? new Date(b.published).getTime() : 0;
+                    return (isNaN(dateA) ? 0 : dateA) - (isNaN(dateB) ? 0 : dateB);
+                });
+            } else if (sortOrder === 'source') {
+                filtered.sort((a, b) => a.source.localeCompare(b.source));
+            }
+
+            // Clear container and check zero state
+            container.innerHTML = '';
+            if (filtered.length === 0) {
+                zeroState.classList.remove('hidden');
+                return;
+            }
+            zeroState.classList.add('hidden');
+
+            // Construct and append cards
+            filtered.forEach(item => {
+                const card = document.createElement('article');
+                card.className = "bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all shadow-sm flex flex-col gap-3";
+
+                // Format publication Date
+                let formattedDate = "N/A";
+                if (item.published) {
+                    try {
+                        formattedDate = new Date(item.published).toLocaleDateString(undefined, {
+                            month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        });
+                        if (formattedDate === "Invalid Date") {
+                            formattedDate = item.published;
+                        }
+                    } catch (e) {
+                        formattedDate = item.published;
+                    }
+                }
+
+                // Category badges colors
+                let catBadgeColor = "bg-slate-950 text-slate-400";
+                if (item.category === 'security') catBadgeColor = "bg-rose-500/10 text-rose-300 border border-rose-500/20";
+                if (item.category === 'development') catBadgeColor = "bg-teal-500/10 text-teal-300 border border-teal-500/20";
+                if (item.category === 'ai') catBadgeColor = "bg-purple-500/10 text-purple-300 border border-purple-500/20";
+                if (item.category === 'infrastructure') catBadgeColor = "bg-amber-500/10 text-amber-300 border border-amber-500/20";
+
+                card.innerHTML = `
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${catBadgeColor}">${item.category}</span>
+                            <span class="text-xs font-mono font-bold text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">${item.source}</span>
+                        </div>
+                        <span class="text-xs text-slate-500 font-mono">${formattedDate}</span>
+                    </div>
+
+                    <div>
+                        <h3 class="text-base font-bold text-slate-100 hover:text-brand-100 transition-colors">
+                            <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="hover:underline flex items-center gap-1.5 inline-flex">
+                                ${item.title}
+                                <svg class="w-4 h-4 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                            </a>
+                        </h3>
+                        <p class="text-xs text-slate-300 mt-2 leading-relaxed font-light">${item.summary || "No cleaned details provided for this article."}</p>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
