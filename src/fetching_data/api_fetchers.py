@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -10,6 +11,7 @@ import yaml
 from dotenv import load_dotenv
 
 import trafilatura
+from playwright.sync_api import sync_playwright
 
 from general_api_fetcher import GeneralApiFetcher
 
@@ -46,92 +48,29 @@ def _save_json(data, source_name: str) -> Path | None:
     return filepath
 
 
-def _extract_urls_from_notes(notes: str) -> list[str]:
-    if not notes:
-        return []
-    urls = []
-    for item in notes.split(";"):
-        item = item.strip()
-        if not item:
-            continue
-        if item.startswith("BOD"):
-            continue
-        found = None
-        for part in item.split():
-            if part.startswith("http://") or part.startswith("https://"):
-                found = part
-                break
-        if not found and (item.startswith("http://") or item.startswith("https://")):
-            found = item
-        if found and "/directives/" not in found:
-            urls.append(found)
-    return urls
-
-
 def _fetch_url_content(url: str) -> str | None:
     try:
         downloaded = trafilatura.fetch_url(url, no_ssl=True)
-        if not downloaded:
-            return None
-        text = trafilatura.extract(downloaded, include_links=False, include_images=False, include_tables=False)
-        return text.strip() if text else None
+        if downloaded:
+            text = trafilatura.extract(downloaded, include_links=False, include_images=False, include_tables=False)
+            if text and len(text.strip()) > 100 and "enable JavaScript" not in text[:200].lower():
+                return text.strip()
     except Exception:
-        return None
+        pass
 
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            text = page.inner_text("body")
+            browser.close()
+            if text:
+                return text.strip()
+    except Exception:
+        pass
 
-def _transform_cisa_to_articles(data: dict) -> list[dict]:
-    today = datetime.now().strftime("%Y-%m-%d")
-    vulnerabilities = data.get("vulnerabilities", [])
-
-    articles = []
-    for vuln in vulnerabilities:
-        if vuln.get("dateAdded") != today:
-            continue
-
-        cve_id = vuln.get("cveID", "")
-        vuln_name = vuln.get("vulnerabilityName") or vuln.get("product", "")
-        title = f"{cve_id} — {vuln_name}"
-
-        short_desc = vuln.get("shortDescription", "")
-        required_action = vuln.get("requiredAction", "")
-        notes = vuln.get("notes", "")
-
-        extracted = _extract_urls_from_notes(notes)
-        vendor_url = extracted[0] if extracted else None
-        nvd_url = next((u for u in extracted if "nvd.nist.gov" in u), None)
-
-        url = vendor_url or nvd_url or f"https://nvd.nist.gov/vuln/detail/{cve_id}"
-
-        parts = [short_desc]
-        if required_action:
-            parts.append(f"Required Action: {required_action}")
-        if notes:
-            refs = notes.replace(" ; ", "\n")
-            parts.append(f"References:\n{refs}")
-        content = "\n\n".join(p for p in parts if p)
-
-        articles.append({
-            "title": title,
-            "url": url,
-            "published": vuln.get("dateAdded", ""),
-            "summary": short_desc,
-            "content": content,
-            "id": cve_id,
-            "cveID": cve_id,
-            "vulnerabilityName": vuln.get("vulnerabilityName", ""),
-            "vendorProject": vuln.get("vendorProject", ""),
-            "product": vuln.get("product", ""),
-            "shortDescription": short_desc,
-            "requiredAction": required_action,
-            "notes": notes,
-            "vendor_advisory_url": vendor_url,
-            "nvd_url": nvd_url,
-            "dueDate": vuln.get("dueDate", ""),
-            "knownRansomwareCampaignUse": vuln.get("knownRansomwareCampaignUse", ""),
-            "cwes": vuln.get("cwes", []),
-        })
-
-    return articles
+    return None
 
 
 def fetch_api_source(source: dict) -> None:
@@ -180,24 +119,75 @@ def fetch_api_source(source: dict) -> None:
             print(f"  [FAIL] {name} — request returned no data")
             return
 
-        if "CISA" in name:
-            articles = _transform_cisa_to_articles(data)
-            if not articles:
-                print(f"  [SKIP] No new vulnerabilities added today")
-                return
-            data = articles
-            print(f"  Found {len(data)} new vulnerabilities for today")
-
-            for i, article in enumerate(data, 1):
-                fetch_url = article.get("vendor_advisory_url") or article.get("nvd_url") or article.get("url")
-                if fetch_url:
-                    text = _fetch_url_content(fetch_url)
-                    if text:
-                        article["article_content"] = text
-                        print(f"    [{i}/{len(data)}] Fetched content ({len(text)} chars) — {article['title'][:60]}...")
+        if source.get("fetch_full_content") and isinstance(data, list):
+            print(f"  Enriching {len(data)} articles with full content...")
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                fut_to_article = {}
+                for article in data:
+                    article_id = article.get("id")
+                    if article_id:
+                        fut = executor.submit(fetcher.request, f"/api/articles/{article_id}")
+                        fut_to_article[fut] = (article, article_id)
+                for future in as_completed(fut_to_article):
+                    article, article_id = fut_to_article[future]
+                    detail = future.result()
+                    if detail and isinstance(detail, dict) and "body_markdown" in detail:
+                        article["content"] = detail["body_markdown"]
+                        article["body_markdown"] = detail["body_markdown"]
+                        print(f"    Fetched body_markdown ({len(detail['body_markdown'])} chars) for article {article_id}")
                     else:
-                        article["article_content"] = None
-                        print(f"    [{i}/{len(data)}] No content fetched — {article['title'][:60]}...")
+                        print(f"    [WARN] Failed to fetch detail for article {article_id}")
+
+            print(f"  Fetching comments for {len(data)} articles...")
+            all_comments = {}
+            for article in data:
+                article_id = article.get("id")
+                if not article_id:
+                    continue
+                time.sleep(0.5)
+                comments = fetcher.request("/api/comments", params={"a_id": article_id})
+                if comments and isinstance(comments, list) and len(comments) > 0:
+                    all_comments[str(article_id)] = comments
+                    print(f"    Fetched {len(comments)} comments for article {article_id}")
+
+            if all_comments:
+                for article_comments in all_comments.values():
+                    for comment in article_comments:
+                        comment.pop("user", None)
+                        comment.pop("children", None)
+                _save_json(all_comments, f"{name} (Comments)")
+                print(f"  [OK]   {name} — comments saved ({len(all_comments)} articles with comments)")
+            else:
+                print(f"  [WARN] {name} — no comments found")
+
+            for article in data:
+                user = article.get("user")
+                if user and isinstance(user, dict):
+                    article["author"] = user.get("username") or user.get("name")
+                else:
+                    article.pop("author", None)
+
+                cover = article.get("cover_image")
+                social = article.get("social_image")
+                article["image_url"] = cover or social or None
+
+            fields_to_remove = [
+                "user", "organization", "flare_tag",
+                "readable_publish_date", "path", "slug",
+                "public_reactions_count", "published_timestamp",
+                "language", "subforem_id", "cover_image", "social_image",
+                "canonical_url", "created_at", "edited_at",
+                "crossposted_at", "posted_at", "last_comment_at",
+                "reading_time_minutes", "tags", "body_markdown",
+                "type_of", "collection_id", "positive_reactions_count",
+                "published_at",
+            ]
+            for article in data:
+                for field in fields_to_remove:
+                    article.pop(field, None)
+
+        if source.get("github_enrich") and isinstance(data, dict):
+            data = _enrich_github_release(data, fetcher, name)
 
         _save_json(data, name)
         print(f"  [OK]   {name} — data saved")
@@ -256,6 +246,74 @@ def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
 
 
 
+def _parse_last_page_from_link(link_header: str | None) -> int | None:
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        if 'rel="last"' in part:
+            match = re.search(r'[?&]page=(\d+)', part)
+            if match:
+                return int(match.group(1))
+    return None
+
+
+def _enrich_github_release(data: dict, fetcher: GeneralApiFetcher, name: str) -> list[dict]:
+    items = data.get("items", [])
+    if not items:
+        print(f"  [WARN] {name} — no repositories in search results")
+        return []
+
+    print(f"  Enriching {len(items)} repositories...")
+    enriched = []
+    for item in items:
+        full_name = item.get("full_name", "")
+        if "/" not in full_name:
+            continue
+        owner, repo = full_name.split("/", 1)
+
+        for field in ("id", "node_id", "url", "owner", "private", "fork", "size", "score", "visibility", "default_branch", "pushed_at", "homepage", "updated_at", "topics", "mirror_url", "has_downloads", "has_issues", "has_pages", "has_projects", "has_wiki", "is_template", "archived", "disabled", "allow_forking", "forks", "open_issues", "watchers", "watchers_count", "forks_count", "open_issues_count", "ssh_url", "clone_url", "svn_url", "git_url"):
+            item.pop(field, None)
+
+        item["repo_url"] = f"https://github.com/{owner}/{repo}"
+
+        readme = fetcher.request_raw(
+            f"/repos/{owner}/{repo}/readme",
+            extra_headers={"Accept": "application/vnd.github.v3.raw"}
+        )
+        if readme:
+            item["readme"] = readme
+
+        languages = fetcher.request(f"/repos/{owner}/{repo}/languages")
+        if languages and isinstance(languages, dict):
+            total = sum(languages.values())
+            if total > 0:
+                item["languages"] = {
+                    lang: round(count / total * 100, 2)
+                    for lang, count in languages.items()
+                }
+
+        contrib_resp = fetcher.request_response(
+            f"/repos/{owner}/{repo}/contributors",
+            params={"per_page": 1, "anon": "true"}
+        )
+        if contrib_resp is not None:
+            link_header = contrib_resp.headers.get("Link")
+            last_page = _parse_last_page_from_link(link_header)
+            if last_page is not None:
+                item["contributor_count"] = last_page
+            else:
+                body = contrib_resp.json()
+                item["contributor_count"] = len(body) if isinstance(body, list) else 0
+
+        enriched.append(item)
+
+    print(f"  [OK]   {name} — {len(enriched)} repositories enriched")
+    return enriched
+
+
+
+
+
 def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
     print(f"\n{'='*60}")
     print("  Hacker News — Top Stories Details")
@@ -291,6 +349,8 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
                 print(f"  [WARN] Hacker News — failed to fetch story {sid}")
 
     if items:
+        for item in items:
+            item.pop("id", None)
         _save_json(items, "Hacker News (Item Detail)")
         print(f"  [OK]   Hacker News (Item Detail) — {len(items)}/{HN_TOP_STORIES_TO_FETCH} stories saved")
     else:

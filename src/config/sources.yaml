@@ -13,6 +13,7 @@ sources:
     params:
       tag: "dotnet"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (C#)"
     type: "api"
@@ -24,6 +25,7 @@ sources:
     params:
       tag: "csharp"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Java)"
     type: "api"
@@ -35,6 +37,7 @@ sources:
     params:
       tag: "java"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Spring Boot)"
     type: "api"
@@ -46,6 +49,7 @@ sources:
     params:
       tag: "springboot"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Android)"
     type: "api"
@@ -57,6 +61,7 @@ sources:
     params:
       tag: "android"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Flutter)"
     type: "api"
@@ -68,6 +73,7 @@ sources:
     params:
       tag: "flutter"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Dart)"
     type: "api"
@@ -79,6 +85,7 @@ sources:
     params:
       tag: "dart"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (AI)"
     type: "api"
@@ -90,6 +97,7 @@ sources:
     params:
       tag: "ai"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Machine Learning)"
     type: "api"
@@ -101,6 +109,7 @@ sources:
     params:
       tag: "machinelearning"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Data Science)"
     type: "api"
@@ -112,6 +121,7 @@ sources:
     params:
       tag: "datascience"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Networking)"
     type: "api"
@@ -123,6 +133,7 @@ sources:
     params:
       tag: "networking"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (IoT)"
     type: "api"
@@ -134,6 +145,7 @@ sources:
     params:
       tag: "iot"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Security)"
     type: "api"
@@ -145,6 +157,7 @@ sources:
     params:
       tag: "security"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Cybersecurity)"
     type: "api"
@@ -156,6 +169,7 @@ sources:
     params:
       tag: "cybersecurity"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Cryptography)"
     type: "api"
@@ -167,6 +181,7 @@ sources:
     params:
       tag: "cryptography"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (SSH)"
     type: "api"
@@ -178,6 +193,7 @@ sources:
     params:
       tag: "ssh"
       per_page: 10
+    fetch_full_content: true
 
   - name: "Dev.to (Protocols)"
     type: "api"
@@ -189,6 +205,7 @@ sources:
     params:
       tag: "protocols"
       per_page: 10
+    fetch_full_content: true
 
   - name: "ArXiv (AI)"
     type: "api"
@@ -277,35 +294,110 @@ sources:
     headers:
       User-Agent: "script:my_rss_reader:v1.0.0 (by /u/Available_Orange2529)"
 
-  - name: "GitHub (Flutter Releases)"
+  - name: "GitHub (dotnet)"
     type: "api"
     method: "GET"
     base_url: "https://api.github.com"
-    endpoint: "/repos/flutter/flutter/releases/latest"
+    endpoint: "/search/repositories"
+    github_enrich: true
     headers:
       Accept: "application/json"
+    params:
+      q: "dotnet"
+      sort: "created"
+      order: "desc"
+      per_page: 5
 
-  - name: "GitHub (.NET Runtime Releases)"
+  - name: "GitHub (csharp)"
     type: "api"
     method: "GET"
     base_url: "https://api.github.com"
-    endpoint: "/repos/dotnet/runtime/releases/latest"
+    endpoint: "/search/repositories"
+    github_enrich: true
     headers:
       Accept: "application/json"
+    params:
+      q: "csharp"
+      sort: "created"
+      order: "desc"
+      per_page: 5
 
-  - name: "GitHub (PowerShell Releases)"
+  - name: "GitHub (jee)"
     type: "api"
     method: "GET"
     base_url: "https://api.github.com"
-    endpoint: "/repos/PowerShell/PowerShell/releases/latest"
+    endpoint: "/search/repositories"
+    github_enrich: true
     headers:
       Accept: "application/json"
+    params:
+      q: "jee"
+      sort: "created"
+      order: "desc"
+      per_page: 5
+
+  - name: "GitHub (security)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/search/repositories"
+    github_enrich: true
+    headers:
+      Accept: "application/json"
+    params:
+      q: "security"
+      sort: "created"
+      order: "desc"
+      per_page: 5
+
+  - name: "GitHub (cryptography)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/search/repositories"
+    github_enrich: true
+    headers:
+      Accept: "application/json"
+    params:
+      q: "cryptography"
+      sort: "created"
+      order: "desc"
+      per_page: 5
+
+  - name: "GitHub (encryption)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/search/repositories"
+    github_enrich: true
+    headers:
+      Accept: "application/json"
+    params:
+      q: "encryption"
+      sort: "created"
+      order: "desc"
+      per_page: 5
+
+  - name: "GitHub (ssh)"
+    type: "api"
+    method: "GET"
+    base_url: "https://api.github.com"
+    endpoint: "/search/repositories"
+    github_enrich: true
+    headers:
+      Accept: "application/json"
+    params:
+      q: "ssh"
+      sort: "created"
+      order: "desc"
+      per_page: 5
 
   - name: "National Vulnerability Database (SSH)"
     type: "api"
     method: "GET"
     base_url: "https://services.nvd.nist.gov"
     endpoint: "/rest/json/cves/2.0"
+    cve_simplify: true
     headers:
       Accept: "application/json"
     params:
@@ -318,6 +410,7 @@ sources:
     method: "GET"
     base_url: "https://services.nvd.nist.gov"
     endpoint: "/rest/json/cves/2.0"
+    cve_simplify: true
     headers:
       Accept: "application/json"
     params:
@@ -330,20 +423,13 @@ sources:
     method: "GET"
     base_url: "https://services.nvd.nist.gov"
     endpoint: "/rest/json/cves/2.0"
+    cve_simplify: true
     headers:
       Accept: "application/json"
     params:
       keywordSearch: "Kubernetes"
       resultsPerPage: 20
     env_api_key: "NVD_API_KEY"
-
-  - name: "CISA (Known Exploited Vulnerabilities)"
-    type: "api"
-    method: "GET"
-    base_url: "https://www.cisa.gov"
-    endpoint: "/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-    headers:
-      Accept: "application/json"
 
   # ==========================================
   # PART 2: RSS Feeds (XML Response)
@@ -353,6 +439,69 @@ sources:
     method: "GET"
     base_url: "https://feed.infoq.com"
     endpoint: "/dotnet/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (AI/ML/Data Eng)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/ai-ml-data-eng/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Security)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/security/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Java)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/java/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Development)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/development/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Mobile)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/mobile/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Architecture & Design)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/architecture-design/"
+    headers:
+      Accept: "application/rss+xml, application/xml, text/xml"
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+  - name: "InfoQ (Culture & Methods)"
+    type: "rss"
+    method: "GET"
+    base_url: "https://feed.infoq.com"
+    endpoint: "/culture-methods/"
     headers:
       Accept: "application/rss+xml, application/xml, text/xml"
       User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"

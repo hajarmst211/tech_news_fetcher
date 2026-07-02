@@ -96,6 +96,39 @@ def fetch_rss_feed(source: dict) -> None:
         return
 
     entries_data = [_entry_to_dict(e) for e in feed.entries]
+
+    if "infoq" in name.lower():
+        for entry in entries_data:
+            entry.pop("id", None)
+
+    if "light reading" in name.lower():
+        for entry in entries_data:
+            entry.pop("published", None)
+            entry.pop("updated", None)
+            entry.pop("id", None)
+
+    if "microsoft .net" in name.lower():
+        for entry in entries_data:
+            entry.pop("published", None)
+            entry.pop("updated", None)
+            entry.pop("id", None)
+
+    if "reddit" in name.lower() or "schneier" in name.lower():
+        for entry in entries_data:
+            entry.pop("id", None)
+            entry.pop("content", None)
+            summary = entry.pop("summary", None)
+            if summary:
+                entry["content"] = summary
+
+    if "venturebeat" in name.lower():
+        for entry in entries_data:
+            entry.pop("published", None)
+            entry.pop("updated", None)
+            summary = entry.pop("summary", None)
+            if summary:
+                entry["content"] = summary
+
     _save_json(entries_data, name)
     print(f"  [OK]   {name} — {len(feed.entries)} entries saved")
 

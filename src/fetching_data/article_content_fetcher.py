@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import trafilatura
+from playwright.sync_api import sync_playwright
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,23 +23,38 @@ def _get_article_url(entry: dict) -> str | None:
 def _fetch_article_text(url: str) -> str | None:
     try:
         downloaded = trafilatura.fetch_url(url, no_ssl=True)
-        if not downloaded:
-            return None
-        text = trafilatura.extract(downloaded, include_links=False, include_images=False, include_tables=False)
-        return text.strip() if text else None
+        if downloaded:
+            text = trafilatura.extract(downloaded, include_links=False, include_images=False, include_tables=False)
+            if text and len(text.strip()) > 100 and "enable JavaScript" not in text[:200].lower():
+                return text.strip()
     except Exception:
-        return None
+        pass
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            text = page.inner_text("body")
+            browser.close()
+            if text:
+                return text.strip()
+    except Exception:
+        pass
+
+    return None
 
 
 def _enrich_entry(entry: dict) -> None:
+    existing = entry.get("content")
+    if existing and isinstance(existing, str) and len(existing) > 100:
+        return
     url = _get_article_url(entry)
     if not url:
         return
     text = _fetch_article_text(url)
     if text:
-        entry["article_content"] = text
-    else:
-        entry["article_content"] = None
+        entry["content"] = text
 
 
 def _process_file(filepath: Path) -> None:
@@ -85,7 +101,7 @@ def _process_file(filepath: Path) -> None:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     # Count successes
-    successes = sum(1 for _, e in entries if isinstance(e.get("article_content"), str))
+    successes = sum(1 for _, e in entries if isinstance(e.get("content"), str) and len(e["content"]) > 100)
     print(f"  [DONE] {successes}/{len(entries)} articles fetched")
     print(f"  [SAVED] {filepath}")
 

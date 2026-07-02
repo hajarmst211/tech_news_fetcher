@@ -8,7 +8,6 @@ Aggregates tech news from the following sources:
 - [Hacker News](https://hacker-news.firebaseio.com) — `GET /v0/newstories.json` + item detail `/v0/item/{id}.json`
 - [GitHub](https://api.github.com) — `GET /repos/{owner}/{repo}/releases/latest` (flutter/flutter, dotnet/runtime, PowerShell/PowerShell)
 - [NVD](https://services.nvd.nist.gov) — `GET /rest/json/cves/2.0` (keywords: SSH, Cryptography, Kubernetes)
-- [CISA](https://www.cisa.gov) — `GET /sites/default/files/feeds/known_exploited_vulnerabilities.json`
 
 **RSS Feeds:**
 - [Reddit](https://www.reddit.com) — `/r/dotnet/.rss`, `/r/flutterdev/.rss`, `/r/netsec/.rss`
@@ -33,5 +32,4 @@ Content (per source type):
 - Hacker News API — story items with title, url, score, by, time, descendants, optional text
 - GitHub Releases API — release objects with tag_name, name, body (Markdown), published_at
 - NVD API — vulnerabilities[] with cve.id, descriptions, metrics.cvssMetricV2, weaknesses
-- CISA KEV API — vulnerabilities[] with cveID, vendorProject, shortDescription, knownRansomwareCampaignUse
 - RSS feeds (Reddit, InfoQ, DZone, VentureBeat, etc.) — entries with title, link, published, summary (HTML), content (HTML), tags

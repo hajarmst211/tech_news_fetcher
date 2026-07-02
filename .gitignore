@@ -8,3 +8,4 @@ endpoints.txt
 data/
 
 program.prof
+*.db

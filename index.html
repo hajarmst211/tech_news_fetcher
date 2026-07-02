@@ -187,7 +187,7 @@
     <script>
         const PIPELINE_FILES = [
             "arxiv_ai.json", "arxiv_machine_learning.json", "arxiv_networks.json",
-            "cisa_known_exploited_vulnerabilities.json", "dark_reading_security.json",
+            "dark_reading_security.json",
             "devto_ai.json", "devto_android.json", "devto_c.json", "devto_cybersecurity.json",
             "devto_dart.json", "devto_data_science.json", "devto_flutter.json",
             "devto_java.json", "devto_machine_learning.json", "devto_net.json",
@@ -280,7 +280,7 @@
         // 3. Normalizer & Database Integrator
         function getCategory(filename) {
             const name = filename.toLowerCase();
-            if (name.includes('security') || name.includes('vulnerability') || name.includes('cisa') || name.includes('schneier') || name.includes('netsec')) {
+            if (name.includes('security') || name.includes('vulnerability') || name.includes('schneier') || name.includes('netsec')) {
                 return 'security';
             }
             if (name.includes('ai') || name.includes('data_science') || name.includes('machine_learning') || name.includes('venturebeat')) {

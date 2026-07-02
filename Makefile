@@ -1,4 +1,4 @@
-PYTHON = python3
+PYTHON = .venv/bin/python3 
 
 FETCH_DIR = src/fetching_data
 CLEAN_DIR = src/cleaning

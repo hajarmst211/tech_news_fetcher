@@ -99,5 +99,15 @@ class GeneralApiFetcher:
             return None
         return response.text
 
+    def request_response(
+        self,
+        endpoint: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[requests.Response]:
+        return self._send(endpoint, method, params, json_data, extra_headers)
+
     def close(self):
         self.session.close()
