@@ -9,6 +9,8 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+import trafilatura
+
 from general_api_fetcher import GeneralApiFetcher
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
@@ -44,6 +46,94 @@ def _save_json(data, source_name: str) -> Path | None:
     return filepath
 
 
+def _extract_urls_from_notes(notes: str) -> list[str]:
+    if not notes:
+        return []
+    urls = []
+    for item in notes.split(";"):
+        item = item.strip()
+        if not item:
+            continue
+        if item.startswith("BOD"):
+            continue
+        found = None
+        for part in item.split():
+            if part.startswith("http://") or part.startswith("https://"):
+                found = part
+                break
+        if not found and (item.startswith("http://") or item.startswith("https://")):
+            found = item
+        if found and "/directives/" not in found:
+            urls.append(found)
+    return urls
+
+
+def _fetch_url_content(url: str) -> str | None:
+    try:
+        downloaded = trafilatura.fetch_url(url, no_ssl=True)
+        if not downloaded:
+            return None
+        text = trafilatura.extract(downloaded, include_links=False, include_images=False, include_tables=False)
+        return text.strip() if text else None
+    except Exception:
+        return None
+
+
+def _transform_cisa_to_articles(data: dict) -> list[dict]:
+    today = datetime.now().strftime("%Y-%m-%d")
+    vulnerabilities = data.get("vulnerabilities", [])
+
+    articles = []
+    for vuln in vulnerabilities:
+        if vuln.get("dateAdded") != today:
+            continue
+
+        cve_id = vuln.get("cveID", "")
+        vuln_name = vuln.get("vulnerabilityName") or vuln.get("product", "")
+        title = f"{cve_id} — {vuln_name}"
+
+        short_desc = vuln.get("shortDescription", "")
+        required_action = vuln.get("requiredAction", "")
+        notes = vuln.get("notes", "")
+
+        extracted = _extract_urls_from_notes(notes)
+        vendor_url = extracted[0] if extracted else None
+        nvd_url = next((u for u in extracted if "nvd.nist.gov" in u), None)
+
+        url = vendor_url or nvd_url or f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+
+        parts = [short_desc]
+        if required_action:
+            parts.append(f"Required Action: {required_action}")
+        if notes:
+            refs = notes.replace(" ; ", "\n")
+            parts.append(f"References:\n{refs}")
+        content = "\n\n".join(p for p in parts if p)
+
+        articles.append({
+            "title": title,
+            "url": url,
+            "published": vuln.get("dateAdded", ""),
+            "summary": short_desc,
+            "content": content,
+            "id": cve_id,
+            "cveID": cve_id,
+            "vulnerabilityName": vuln.get("vulnerabilityName", ""),
+            "vendorProject": vuln.get("vendorProject", ""),
+            "product": vuln.get("product", ""),
+            "shortDescription": short_desc,
+            "requiredAction": required_action,
+            "notes": notes,
+            "vendor_advisory_url": vendor_url,
+            "nvd_url": nvd_url,
+            "dueDate": vuln.get("dueDate", ""),
+            "knownRansomwareCampaignUse": vuln.get("knownRansomwareCampaignUse", ""),
+            "cwes": vuln.get("cwes", []),
+        })
+
+    return articles
+
+
 def fetch_api_source(source: dict) -> None:
     name = source["name"]
     base_url = source["base_url"]
@@ -68,19 +158,49 @@ def fetch_api_source(source: dict) -> None:
     print(f"{'='*60}")
 
     if response_type == "xml":
-        raw = fetcher.request_raw(endpoint, params=params)
-        if raw is None:
-            return
-        _print_xml_source(raw)
-        entries = _xml_entries_to_dicts(raw)
-        if entries:
-            _save_json(entries, name)
+        data = fetcher.request(endpoint, params=params)
+        if data is not None:
+            _print_json_source(data)
+            _save_json(data, name)
+            print(f"  [OK]   {name} — data saved (JSON)")
+        else:
+            raw = fetcher.request_raw(endpoint, params=params)
+            if raw is None:
+                print(f"  [FAIL] {name} — request returned no data")
+                return
+            entries = _xml_entries_to_dicts(raw)
+            if entries:
+                _save_json(entries, name)
+                print(f"  [OK]   {name} — {len(entries)} entries saved")
+            else:
+                print(f"  [WARN] {name} — parsed 0 entries")
     else:
         data = fetcher.request(endpoint, params=params)
         if data is None:
+            print(f"  [FAIL] {name} — request returned no data")
             return
-        _print_json_source(data)
+
+        if "CISA" in name:
+            articles = _transform_cisa_to_articles(data)
+            if not articles:
+                print(f"  [SKIP] No new vulnerabilities added today")
+                return
+            data = articles
+            print(f"  Found {len(data)} new vulnerabilities for today")
+
+            for i, article in enumerate(data, 1):
+                fetch_url = article.get("vendor_advisory_url") or article.get("nvd_url") or article.get("url")
+                if fetch_url:
+                    text = _fetch_url_content(fetch_url)
+                    if text:
+                        article["article_content"] = text
+                        print(f"    [{i}/{len(data)}] Fetched content ({len(text)} chars) — {article['title'][:60]}...")
+                    else:
+                        article["article_content"] = None
+                        print(f"    [{i}/{len(data)}] No content fetched — {article['title'][:60]}...")
+
         _save_json(data, name)
+        print(f"  [OK]   {name} — data saved")
 
 
 def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
@@ -121,6 +241,11 @@ def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
         if "link" not in item and links:
             item["link"] = links[0].get("href", "")
 
+        for link in links:
+            if link.get("title") == "pdf":
+                item["pdf_url"] = link.get("href", "")
+                break
+
         categories = entry.findall("atom:category", ns) or entry.findall("category")
         if categories:
             item["categories"] = [c.get("term", "") for c in categories if c.get("term")]
@@ -130,81 +255,6 @@ def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
     return result
 
 
-def _print_xml_source(raw: str) -> None:
-    try:
-        root = ET.fromstring(raw)
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
-        entries = root.findall(".//atom:entry", ns)
-        if not entries:
-            entries = root.findall(".//entry")
-        print(f"  Found {len(entries)} entries")
-        for i, entry in enumerate(entries[:10]):
-            title_el = entry.find("atom:title", ns)
-            if title_el is None:
-                title_el = entry.find("title")
-            id_el = entry.find("atom:id", ns)
-            if id_el is None:
-                id_el = entry.find("id")
-            title = title_el.text.strip() if title_el is not None and title_el.text else "N/A"
-            link = id_el.text.strip() if id_el is not None and id_el.text else "N/A"
-            print(f"  [{i+1}] {title}")
-            print(f"       {link}")
-    except ET.ParseError as e:
-        print(f"  [ERROR] XML parse failed: {e}")
-
-
-def _print_json_source(data) -> None:
-    if isinstance(data, list):
-        valid = [d for d in data if isinstance(d, dict)]
-        print(f"  Found {len(valid)} items")
-        for i, item in enumerate(valid[:10]):
-            title = item.get("title") or "N/A"
-            url = item.get("url") or item.get("html_url") or item.get("link") or "N/A"
-            print(f"  [{i+1}] {title}")
-            print(f"       {url}")
-    elif isinstance(data, dict):
-        if "vulnerabilities" in data and isinstance(data["vulnerabilities"], list):
-            vulns = data["vulnerabilities"]
-            print(f"  Found {len(vulns)} items")
-            for i, vuln in enumerate(vulns[:10]):
-                if "cve" in vuln:
-                    cve = vuln["cve"]
-                    cve_id = cve.get("id", "N/A")
-                    descs = cve.get("descriptions", [])
-                    desc = descs[0].get("value", "") if descs else ""
-                    refs = cve.get("references", [])
-                    ref_url = refs[0].get("url", "") if refs else ""
-                    print(f"  [{i+1}] {cve_id}: {desc[:120]}")
-                    print(f"       {ref_url}")
-                else:
-                    cve_id = vuln.get("cveID", "N/A")
-                    vname = vuln.get("vulnerabilityName", "N/A")
-                    sdesc = vuln.get("shortDescription", "")
-                    notes = vuln.get("notes", "")
-                    print(f"  [{i+1}] {cve_id}: {vname} — {sdesc[:100]}")
-                    print(f"       {notes}")
-        else:
-            children = (
-                data.get("data", {}).get("children", [])
-                if "data" in data and isinstance(data["data"], dict)
-                else []
-            )
-            if children:
-                print(f"  Found {len(children)} items")
-                for i, child in enumerate(children[:10]):
-                    kid = child.get("data", {}) if isinstance(child, dict) else {}
-                    title = kid.get("title", "N/A")
-                    url = kid.get("url", "N/A")
-                    print(f"  [{i+1}] {title}")
-                    print(f"       {url}")
-            else:
-                title = data.get("title", data.get("name", "N/A"))
-                url = data.get("html_url", data.get("url", "N/A"))
-                print(f"  Title: {title}")
-                print(f"  URL:   {url}")
-    else:
-        print(f"  {data}")
-
 
 def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
     print(f"\n{'='*60}")
@@ -213,12 +263,13 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
 
     ids_data = fetcher.request("/v0/newstories.json", params={"print": "pretty"})
     if not ids_data or not isinstance(ids_data, list):
-        print("  [ERROR] Could not fetch HN story IDs")
+        print(f"  [FAIL] Hacker News — could not fetch story IDs")
         return
 
     _save_json(ids_data, "Hacker News (New Stories)")
+    print(f"  [OK]   Hacker News (New Stories) — {len(ids_data)} IDs")
 
-    print(f"  Found {len(ids_data)} story IDs, fetching top {HN_TOP_STORIES_TO_FETCH}")
+    print(f"  Fetching top {HN_TOP_STORIES_TO_FETCH} story details...")
     story_ids = ids_data[:HN_TOP_STORIES_TO_FETCH]
 
     items = []
@@ -236,9 +287,14 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
                 url = item.get("url", f"https://news.ycombinator.com/item?id={sid}")
                 print(f"  [{sid}] {title}")
                 print(f"         {url}")
+            else:
+                print(f"  [WARN] Hacker News — failed to fetch story {sid}")
 
     if items:
         _save_json(items, "Hacker News (Item Detail)")
+        print(f"  [OK]   Hacker News (Item Detail) — {len(items)}/{HN_TOP_STORIES_TO_FETCH} stories saved")
+    else:
+        print(f"  [FAIL] Hacker News — no story details fetched")
 
 
 def main() -> None:

@@ -59,6 +59,7 @@ class GeneralApiFetcher:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+            logger.info(f"  [OK] {response.status_code} from {method} {url}")
             return response
         except requests.exceptions.HTTPError as http_err:
             logger.error(f"HTTP error {response.status_code} on {method} {url}: {http_err}")

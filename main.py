@@ -38,6 +38,12 @@ def main() -> None:
     )
 
     run_step(
+        "Fetching article content",
+        [sys.executable, "article_content_fetcher.py"],
+        str(PROJECT_ROOT / "src" / "fetching_data"),
+    )
+
+    run_step(
         "Cleaning data",
         [sys.executable, "general_cleaning.py"],
         str(PROJECT_ROOT / "src" / "cleaning"),

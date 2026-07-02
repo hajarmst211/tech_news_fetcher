@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -71,12 +72,13 @@ def fetch_rss_feed(source: dict) -> None:
     print(f"{'='*60}")
 
     if raw_xml is None:
+        print(f"  [FAIL] {name} — request returned no data")
         return
 
     feed = feedparser.parse(raw_xml)
 
     if feed.bozo and not feed.entries:
-        print(f"  [ERROR] Feed parse error: {feed.bozo_exception}")
+        print(f"  [FAIL] {name} — feed parse error: {feed.bozo_exception}")
         return
 
     print(f"  Found {len(feed.entries)} entries")
@@ -89,8 +91,13 @@ def fetch_rss_feed(source: dict) -> None:
         if published:
             print(f"       Published: {published}")
 
+    if not feed.entries:
+        print(f"  [WARN] {name} — 0 entries (feed may be empty)")
+        return
+
     entries_data = [_entry_to_dict(e) for e in feed.entries]
     _save_json(entries_data, name)
+    print(f"  [OK]   {name} — {len(feed.entries)} entries saved")
 
 
 def main() -> None:
@@ -101,10 +108,19 @@ def main() -> None:
         print("No RSS sources found in config.")
         return
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(fetch_rss_feed, s) for s in rss_sources]
-        for future in as_completed(futures):
-            future.result()
+    reddit_sources = [s for s in rss_sources if "reddit.com" in s.get("base_url", "")]
+    other_sources = [s for s in rss_sources if "reddit.com" not in s.get("base_url", "")]
+
+    if other_sources:
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(fetch_rss_feed, s) for s in other_sources]
+            for future in as_completed(futures):
+                future.result()
+
+    for i, s in enumerate(reddit_sources):
+        if i > 0:
+            time.sleep(3)
+        fetch_rss_feed(s)
 
 
 if __name__ == "__main__":

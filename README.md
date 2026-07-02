@@ -25,3 +25,13 @@ Aggregates tech news from the following sources:
 
 
 Primary Bottleneck: External subprocess execution. Over 99.5% of the program's runtime is spent waiting for external commands to finish.
+
+
+Content (per source type):
+- Dev.to API — articles with title, description, url, tags, user, published_at, etc.
+- ArXiv API (XML) — entries with id, title, summary, authors, categories, published
+- Hacker News API — story items with title, url, score, by, time, descendants, optional text
+- GitHub Releases API — release objects with tag_name, name, body (Markdown), published_at
+- NVD API — vulnerabilities[] with cve.id, descriptions, metrics.cvssMetricV2, weaknesses
+- CISA KEV API — vulnerabilities[] with cveID, vendorProject, shortDescription, knownRansomwareCampaignUse
+- RSS feeds (Reddit, InfoQ, DZone, VentureBeat, etc.) — entries with title, link, published, summary (HTML), content (HTML), tags
