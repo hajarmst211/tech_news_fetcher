@@ -9,8 +9,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from db.database import init_db, ensure_source
-from db.loader import insert_items, insert_vulnerabilities, insert_hn_seen_ids
+from db.database import init_db, ensure_source, get_conn, return_conn
+from db.loader import insert_items, insert_vulnerabilities, insert_hn_seen_ids, insert_comments
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -138,6 +138,67 @@ def clean_record(record: dict, source_type: str | None = None) -> dict:
 
 # ── File processing ──────────────────────────────────────────────
 
+def _process_comments_file(stem: str, data: dict, source_type: str) -> None:
+    parent_stem = stem.removesuffix("_comments")
+    if parent_stem == stem:
+        print(f"  [WARN] Cannot determine parent source for '{stem}'")
+        return
+
+    parent_category = extract_category(parent_stem)
+    parent_source_id = ensure_source(parent_stem, source_type, parent_category)
+    ensure_source(stem, source_type, extract_category(stem))
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            article_ids = list(data.keys())
+            cur.execute(
+                f"SELECT id, external_id FROM items WHERE source_id = %s AND external_id = ANY (%s)",
+                (parent_source_id, list(article_ids)),
+            )
+            item_map = {row[1]: row[0] for row in cur.fetchall()}
+    finally:
+        return_conn(conn)
+
+    if not item_map:
+        print(f"  [WARN] No parent items found for '{stem}' — skipping")
+        return
+
+    records = []
+    for article_eid, comments in data.items():
+        item_id = item_map.get(str(article_eid))
+        if item_id is None:
+            continue
+
+        for comment in comments:
+            if not isinstance(comment, dict):
+                continue
+
+            external_id = comment.get("id_code", "")
+            body_html = comment.get("body_html", "")
+            body_text = clean_text(body_html)
+            published_at = normalize_date(comment.get("created_at"))
+
+            extra = {}
+            for k, v in comment.items():
+                if k not in ("id_code", "created_at", "body_html", "user", "author"):
+                    extra[k] = v
+
+            records.append({
+                "item_id": item_id,
+                "external_id": external_id,
+                "author": comment.get("author"),
+                "body_html": body_html,
+                "body_text": body_text,
+                "published_at": published_at,
+                "extra": extra or None,
+            })
+
+    if records:
+        insert_comments(records)
+        print(f"  [OK]   Inserted {len(records)} comments for '{stem}'")
+
+
 def clean_file(filepath: Path) -> None:
     print(f"\n  Processing: {filepath.name}")
 
@@ -148,6 +209,13 @@ def clean_file(filepath: Path) -> None:
     source_type = detect_source_type(stem)
     source_name = stem
     category = extract_category(stem)
+
+    if stem.endswith("_comments"):
+        if isinstance(data, dict):
+            _process_comments_file(stem, data, source_type)
+        else:
+            print(f"  [WARN] Expected dict for comments file '{stem}', got {type(data).__name__}")
+        return
 
     source_id = ensure_source(source_name, source_type, category)
 

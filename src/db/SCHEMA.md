@@ -62,6 +62,28 @@ NVD data is structurally different from articles — kept separate.
 | `cvss_vector` | `TEXT` | | CVSS vector string |
 | `raw` | `JSONB` | `NOT NULL` | Full original CVE object from the NVD API |
 
+### `comments`
+
+Comments fetched from APIs (e.g., Dev.to article comments). Each comment is linked to its parent item.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `BIGSERIAL` | `PRIMARY KEY` | Auto-incrementing ID |
+| `item_id` | `BIGINT` | `NOT NULL REFERENCES items(id) ON DELETE CASCADE` | FK to the parent item |
+| `external_id` | `TEXT` | `NOT NULL` | Source-specific comment ID (e.g., Dev.to `id_code`) |
+| `author` | `TEXT` | | Comment author username/name |
+| `body_html` | `TEXT` | | Original HTML content of the comment |
+| `body_text` | `TEXT` | | Cleaned plain-text version of the comment |
+| `published_at` | `TIMESTAMPTZ` | | When the comment was posted |
+| `fetched_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | When we fetched it |
+| `extra` | `JSONB` | | Any additional source-specific fields |
+
+**Indexes:**
+- `idx_comments_item` — `(item_id)` for fast lookups by parent item
+- `idx_comments_published` — `(published_at DESC)` for ordering
+
+**Unique constraint:** `(item_id, external_id)` — each comment is unique within its parent item.
+
 ### `hn_seen_ids`
 
 The Hacker News "new stories" endpoint returns an ordered list of story IDs. This table tracks which IDs we've already seen, acting as a dedup queue.
@@ -86,6 +108,7 @@ clean in memory (general_cleaning.py)
 insert into DB (db/loader.py)
     │  insert_items()       → items table
     │  insert_vulnerabilities() → vulnerabilities table
+    │  insert_comments()    → comments table
     │  insert_hn_seen_ids() → hn_seen_ids table
     ▼
 PostgreSQL

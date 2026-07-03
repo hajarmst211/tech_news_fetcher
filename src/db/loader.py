@@ -192,6 +192,47 @@ def insert_vulnerabilities(source_id: int, records: list[dict]) -> int:
     return inserted
 
 
+def insert_comments(records: list[dict]) -> int:
+    if not records:
+        return 0
+
+    conn = get_conn()
+    inserted = 0
+    try:
+        with conn.cursor() as cur:
+            for rec in records:
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO comments
+                            (item_id, external_id, author, body_html, body_text,
+                             published_at, extra)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (item_id, external_id) DO NOTHING
+                        """,
+                        (
+                            rec["item_id"],
+                            rec["external_id"],
+                            rec.get("author"),
+                            rec.get("body_html"),
+                            rec.get("body_text"),
+                            rec.get("published_at"),
+                            Json(rec["extra"]) if rec.get("extra") else None,
+                        ),
+                    )
+                    if cur.rowcount > 0:
+                        inserted += 1
+                except psycopg2.Error as e:
+                    print(f"  [DB ERROR] Skipping comment {rec.get('external_id')}: {e}")
+        conn.commit()
+    finally:
+        return_conn(conn)
+
+    if inserted:
+        print(f"  [DB] Inserted {inserted}/{len(records)} comments")
+    return inserted
+
+
 def insert_hn_seen_ids(hn_ids: list[int]) -> int:
     if not hn_ids:
         return 0

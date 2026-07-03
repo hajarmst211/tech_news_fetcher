@@ -28,6 +28,22 @@ CREATE INDEX IF NOT EXISTS idx_items_published ON items (published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_items_hash ON items (content_hash);
 CREATE INDEX IF NOT EXISTS idx_items_tags ON items USING GIN (tags);
 
+CREATE TABLE IF NOT EXISTS comments (
+    id              BIGSERIAL PRIMARY KEY,
+    item_id         BIGINT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    external_id     TEXT NOT NULL,
+    author          TEXT,
+    body_html       TEXT,
+    body_text       TEXT,
+    published_at    TIMESTAMPTZ,
+    fetched_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    extra           JSONB,
+    UNIQUE (item_id, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_item ON comments (item_id);
+CREATE INDEX IF NOT EXISTS idx_comments_published ON comments (published_at DESC);
+
 CREATE TABLE IF NOT EXISTS vulnerabilities (
     cve_id          TEXT PRIMARY KEY,
     source_id       SMALLINT NOT NULL REFERENCES sources(id),

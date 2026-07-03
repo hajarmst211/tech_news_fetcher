@@ -61,6 +61,29 @@ def _entry_to_dict(entry) -> dict:
     return item
 
 
+def _flatten_reddit_comments(children: list) -> list[dict]:
+    result = []
+    for child in children:
+        if not isinstance(child, dict) or child.get("kind") != "t1":
+            continue
+        data = child.get("data", {})
+        created = data.get("created_utc")
+        comment = {
+            "id_code": data.get("id"),
+            "author": data.get("author"),
+            "body_html": data.get("body"),
+            "created_at": datetime.utcfromtimestamp(created).isoformat() if isinstance(created, (int, float)) else None,
+            "parent_id": data.get("parent_id"),
+        }
+        result.append(comment)
+        replies = data.get("replies")
+        if isinstance(replies, dict) and replies.get("kind") == "Listing":
+            more_children = replies.get("data", {}).get("children", [])
+            if more_children:
+                result.extend(_flatten_reddit_comments(more_children))
+    return result
+
+
 def fetch_rss_feed(source: dict) -> None:
     name = source["name"]
     base_url = source["base_url"]
@@ -117,13 +140,45 @@ def fetch_rss_feed(source: dict) -> None:
             entry.pop("updated", None)
             entry.pop("id", None)
 
-    if "reddit" in name.lower() or "schneier" in name.lower():
+    if "schneier" in name.lower():
         for entry in entries_data:
             entry.pop("id", None)
             entry.pop("content", None)
             summary = entry.pop("summary", None)
             if summary:
                 entry["content"] = summary
+
+    if "reddit" in name.lower():
+        for entry in entries_data:
+            entry.pop("content", None)
+            summary = entry.pop("summary", None)
+            if summary:
+                entry["content"] = summary
+            post_id_match = re.search(r'/comments/([^/]+)/', entry.get("link", ""))
+            if post_id_match:
+                entry["id"] = post_id_match.group(1)
+            else:
+                entry.pop("id", None)
+
+        all_comments = {}
+        for entry in entries_data:
+            link = entry.get("link", "")
+            post_id = entry.get("id", "")
+            if not link or not post_id:
+                continue
+            time.sleep(0.5)
+            comments_url = link.rstrip("/") + ".json"
+            comments_data = fetcher.request(comments_url)
+            if comments_data and isinstance(comments_data, list) and len(comments_data) == 2:
+                children = comments_data[1].get("data", {}).get("children", [])
+                flat = _flatten_reddit_comments(children)
+                if flat:
+                    all_comments[post_id] = flat
+                    print(f"    Fetched {len(flat)} comments for post {post_id}")
+
+        if all_comments:
+            _save_json(all_comments, f"{name} (Comments)")
+            print(f"  [OK]   {name} — comments saved ({len(all_comments)} posts with comments)")
 
     if "venturebeat" in name.lower():
         for entry in entries_data:
