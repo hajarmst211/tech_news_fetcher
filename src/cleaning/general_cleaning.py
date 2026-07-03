@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from db.database import init_db, ensure_source
 from db.loader import insert_items, insert_vulnerabilities, insert_hn_seen_ids
@@ -176,10 +176,10 @@ def clean_file(filepath: Path) -> None:
 
 def clean_all(date_str: str | None = None) -> None:
     date_str = date_str or datetime.now().strftime("%Y-%m-%d")
-    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir = PROJECT_ROOT / "data" / date_str
 
     if not raw_dir.exists():
-        print(f"No raw data directory found: {raw_dir}")
+        print(f"No data directory found: {raw_dir}")
         return
 
     files = sorted(raw_dir.glob("*.json"))

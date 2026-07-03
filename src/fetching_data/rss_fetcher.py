@@ -28,7 +28,7 @@ def _sanitize_name(name: str) -> str:
 
 def _save_json(data, source_name: str) -> Path | None:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir = PROJECT_ROOT / "data" / date_str
     raw_dir.mkdir(parents=True, exist_ok=True)
     filename = _sanitize_name(source_name) + ".json"
     filepath = raw_dir / filename
@@ -39,11 +39,15 @@ def _save_json(data, source_name: str) -> Path | None:
 
 
 def _entry_to_dict(entry) -> dict:
+    now = datetime.now().isoformat()
+    updated = entry.get("updated")
     item = {
         "title": entry.get("title"),
         "link": entry.get("link"),
         "published": entry.get("published"),
-        "updated": entry.get("updated"),
+        "updated": updated,
+        "updated_at": updated,
+        "fetched_at": now,
         "summary": entry.get("summary"),
         "id": entry.get("id"),
     }

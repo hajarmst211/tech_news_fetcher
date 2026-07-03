@@ -112,10 +112,10 @@ def main() -> None:
     args = parser.parse_args()
 
     date_str = args.date
-    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir = PROJECT_ROOT / "data" / date_str
 
     if not raw_dir.exists():
-        print(f"No raw data directory found: {raw_dir}")
+        print(f"No data directory found: {raw_dir}")
         return
 
     files = sorted(raw_dir.glob("*.json"))

@@ -38,7 +38,7 @@ def _sanitize_name(name: str) -> str:
 
 def _save_json(data, source_name: str) -> Path | None:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    raw_dir = PROJECT_ROOT / "data" / "raw" / date_str
+    raw_dir = PROJECT_ROOT / "data" / date_str
     raw_dir.mkdir(parents=True, exist_ok=True)
     filename = _sanitize_name(source_name) + ".json"
     filepath = raw_dir / filename
@@ -46,6 +46,26 @@ def _save_json(data, source_name: str) -> Path | None:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"  [SAVED] {filepath}")
     return filepath
+
+
+def _annotate_records(data) -> None:
+    now = datetime.now().isoformat()
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                item["fetched_at"] = now
+                if "updated_at" not in item:
+                    for alt in ("updated", "last_modified"):
+                        if alt in item:
+                            item["updated_at"] = item[alt]
+                            break
+    elif isinstance(data, dict):
+        data["fetched_at"] = now
+        if "updated_at" not in data:
+            for alt in ("updated", "last_modified"):
+                if alt in data:
+                    data["updated_at"] = data[alt]
+                    break
 
 
 def _fetch_url_content(url: str) -> str | None:
@@ -99,6 +119,7 @@ def fetch_api_source(source: dict) -> None:
     if response_type == "xml":
         data = fetcher.request(endpoint, params=params)
         if data is not None:
+            _annotate_records(data)
             _print_json_source(data)
             _save_json(data, name)
             print(f"  [OK]   {name} — data saved (JSON)")
@@ -109,6 +130,7 @@ def fetch_api_source(source: dict) -> None:
                 return
             entries = _xml_entries_to_dicts(raw)
             if entries:
+                _annotate_records(entries)
                 _save_json(entries, name)
                 print(f"  [OK]   {name} — {len(entries)} entries saved")
             else:
@@ -155,6 +177,7 @@ def fetch_api_source(source: dict) -> None:
                     for comment in article_comments:
                         comment.pop("user", None)
                         comment.pop("children", None)
+                _annotate_records(all_comments)
                 _save_json(all_comments, f"{name} (Comments)")
                 print(f"  [OK]   {name} — comments saved ({len(all_comments)} articles with comments)")
             else:
@@ -189,6 +212,7 @@ def fetch_api_source(source: dict) -> None:
         if source.get("github_enrich") and isinstance(data, dict):
             data = _enrich_github_release(data, fetcher, name)
 
+        _annotate_records(data)
         _save_json(data, name)
         print(f"  [OK]   {name} — data saved")
 
@@ -351,6 +375,7 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
     if items:
         for item in items:
             item.pop("id", None)
+        _annotate_records(items)
         _save_json(items, "Hacker News (Item Detail)")
         print(f"  [OK]   Hacker News (Item Detail) — {len(items)}/{HN_TOP_STORIES_TO_FETCH} stories saved")
     else:

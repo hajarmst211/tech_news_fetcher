@@ -8,10 +8,7 @@ from psycopg2.extras import Json
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://localhost:5432/tech_news",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 _connection_pool = None
 
