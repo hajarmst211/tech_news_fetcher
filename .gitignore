@@ -10,3 +10,5 @@ data/
 program.prof
 *.db
 *__init__.py
+
+stats.json

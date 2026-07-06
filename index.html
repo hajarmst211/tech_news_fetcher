@@ -76,6 +76,12 @@
                 Load From Server
             </button>
 
+            <!-- Stats Toggle -->
+            <button onclick="toggleStats()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                Stats
+            </button>
+
             <!-- File Upload / Browse -->
             <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
@@ -178,6 +184,15 @@
                     </div>
                     <h3 class="text-lg font-bold text-slate-200">Awaiting Pipeline Data</h3>
                     <p class="text-xs text-slate-400 max-w-sm mx-auto mt-2 mb-6">Select your local date and fetch from server, or drop your `data/cleaned` files here directly.</p>
+                </div>
+            </div>
+
+            <!-- Stats View -->
+            <div id="stats-view" class="flex-1 overflow-y-auto p-6 hidden">
+                <div class="max-w-6xl mx-auto space-y-8">
+                    <div id="stats-content" class="text-center py-24 text-slate-400 text-sm">
+                        Loading stats... (run <code class="text-brand-100 bg-slate-900 px-2 py-0.5 rounded">python3 generate_stats.py</code> to generate <code class="text-brand-100 bg-slate-900 px-2 py-0.5 rounded">stats.json</code> first)
+                    </div>
                 </div>
             </div>
         </main>
@@ -457,6 +472,152 @@
                 `;
                 container.appendChild(card);
             });
+        }
+
+        // 6. Stats View
+        let statsViewActive = false;
+
+        function toggleStats() {
+            statsViewActive = !statsViewActive;
+            const articles = document.getElementById('articles-container');
+            const stats = document.getElementById('stats-view');
+            if (statsViewActive) {
+                articles.classList.add('hidden');
+                stats.classList.remove('hidden');
+                loadStats();
+            } else {
+                articles.classList.remove('hidden');
+                stats.classList.add('hidden');
+            }
+        }
+
+        async function loadStats() {
+            const container = document.getElementById('stats-content');
+            try {
+                const resp = await fetch('./stats.json');
+                if (!resp.ok) throw new Error('Not found');
+                const data = await resp.json();
+                renderStats(data);
+            } catch (e) {
+                container.innerHTML = `<div class="text-center py-24 text-slate-400 text-sm">
+                    Could not load stats.json. Run <code class="text-brand-100 bg-slate-900 px-2 py-0.5 rounded">python3 generate_stats.py</code> first.
+                </div>`;
+            }
+        }
+
+        function renderStats(data) {
+            let totalFiles = 0;
+            let totalItems = 0;
+            let totalDbItems = data.db.total_items_non_comments || 0;
+
+            let tableRows = '';
+            for (const [source, info] of Object.entries(data.files)) {
+                const fileCount = info.files.length;
+                const sourceItems = info.files.reduce((s, f) => s + f.items, 0);
+                const hasComments = info.has_comments ? '✅' : '—';
+                totalFiles += fileCount;
+                totalItems += sourceItems;
+
+                const fileDetail = info.files.map(f =>
+                    `<span class="text-xs ${f.is_comments ? 'text-slate-500' : 'text-slate-300'}">${f.file} <span class="text-slate-500">(${f.items})</span></span>`
+                ).join('<br>');
+
+                tableRows += `<tr class="border-b border-slate-800 hover:bg-slate-900/50">
+                    <td class="py-2.5 px-3 text-sm font-semibold text-slate-100 whitespace-nowrap">${source}</td>
+                    <td class="py-2.5 px-3 text-sm text-slate-300 text-center">${fileCount}</td>
+                    <td class="py-2.5 px-3 text-sm text-slate-300 text-center">${hasComments}</td>
+                    <td class="py-2.5 px-3 text-sm text-slate-300 text-center font-mono">${sourceItems}</td>
+                    <td class="py-2.5 px-3 text-xs text-slate-400 leading-relaxed">${fileDetail}</td>
+                </tr>`;
+            }
+
+            const dbCategories = data.db.categories || {};
+            const catOrder = ['summary, content', 'summary, no content', 'no summary, content', 'no summary, no content'];
+            let dbCatRows = '';
+            for (const cat of catOrder) {
+                const count = dbCategories[cat] || 0;
+                dbCatRows += `<tr class="border-b border-slate-800">
+                    <td class="py-2 px-3 text-sm text-slate-300">${cat}</td>
+                    <td class="py-2 px-3 text-sm text-slate-100 font-mono text-right">${count}</td>
+                </tr>`;
+            }
+
+            const tableCounts = data.db.table_counts || {};
+            let tableCountRows = '';
+            for (const [tbl, cnt] of Object.entries(tableCounts)) {
+                tableCountRows += `<tr class="border-b border-slate-800">
+                    <td class="py-2 px-3 text-sm text-slate-300 font-mono">${tbl}</td>
+                    <td class="py-2 px-3 text-sm text-slate-100 font-mono text-right">${cnt}</td>
+                </tr>`;
+            }
+
+            container.innerHTML = `
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                    <h2 class="text-lg font-bold text-white mb-4">JSON Files by Source</h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                                    <th class="py-3 px-3">Source</th>
+                                    <th class="py-3 px-3 text-center">Files</th>
+                                    <th class="py-3 px-3 text-center">Has Comments</th>
+                                    <th class="py-3 px-3 text-center">Items</th>
+                                    <th class="py-3 px-3">Files (items)</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                            <tfoot>
+                                <tr class="text-sm font-bold text-slate-100 border-t-2 border-brand-500/50">
+                                    <td class="py-3 px-3">TOTAL</td>
+                                    <td class="py-3 px-3 text-center">${totalFiles}</td>
+                                    <td class="py-3 px-3 text-center"></td>
+                                    <td class="py-3 px-3 text-center font-mono">${totalItems}</td>
+                                    <td class="py-3 px-3"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                        <h2 class="text-lg font-bold text-white mb-4">Database Tables</h2>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                                        <th class="py-3 px-3">Table</th>
+                                        <th class="py-3 px-3 text-right">Items</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${tableCountRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                        <h2 class="text-lg font-bold text-white mb-4">Summary / Content Breakdown</h2>
+                        <p class="text-xs text-slate-500 mb-3">Excluding comment sources</p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                                        <th class="py-3 px-3">Category</th>
+                                        <th class="py-3 px-3 text-right">Count</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${dbCatRows}</tbody>
+                                <tfoot>
+                                    <tr class="text-sm font-bold text-slate-100 border-t-2 border-brand-500/50">
+                                        <td class="py-3 px-3">TOTAL</td>
+                                        <td class="py-3 px-3 text-right font-mono">${totalDbItems}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
     </script>
 </body>

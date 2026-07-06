@@ -1,0 +1,8 @@
+You are an AI assistant designed to categorize text. 
+Analyze the input text provided below and determine its overall general theme.
+Respond using only one or two words. Do not include any punctuation, introductory phrases, or explanations.
+
+Input Text:
+{text}
+
+Theme:
