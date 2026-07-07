@@ -1,8 +1,13 @@
 You are an AI assistant designed to categorize text. 
-Analyze the input text provided below and determine its overall general theme.
-Respond using only one or two words. Do not include any punctuation, introductory phrases, or explanations.
+Analyze the summaries of the articles in the JSON array below and determine an overall general theme for each.
+For each theme, use only one or two words. Do not include punctuation, introductory phrases, or explanations.
 
-Input Text:
-{text}
+Articles:
+{articles_json}
 
-Theme:
+Respond using ONLY a valid JSON array of objects, containing the keys "id" and "theme". Example:
+[
+  {
+    "id": 7, 
+  " theme": "theme extracted goes here"}
+]

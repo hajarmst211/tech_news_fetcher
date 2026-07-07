@@ -1,13 +1,20 @@
+import json
 import os
-import psycopg2
-from psycopg2.extras import execute_batch
-from google import genai
+import time
 from pathlib import Path
-from dotenv import load_dotenv  
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extras import DictCursor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+env_path = PROJECT_ROOT / ".env"
 
-load_dotenv()
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+else:
+    load_dotenv()
 
 api_key = os.environ.get("GEMINI_API_KEY")
 db_url = os.environ.get("DATABASE_URL")
@@ -20,81 +27,128 @@ if not db_url:
 
 client = genai.Client(api_key=api_key)
 
-def load_prompt_template(prompt_filename="prompt.txt"):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    prompt_path = os.path.join(script_dir, prompt_filename)
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        print(f"Error: Prompt file '{prompt_path}' not found.")
-        return None
+BATCH_SIZE = 50  
+MODEL_NAME = "gemini-2.5-flash"  
 
-def get_theme(article_text, prompt_template):
-    if not article_text or not article_text.strip():
-        return None
+def load_prompt_template() -> str:
+    """Loads the prompt template from prompt.txt relative to this script."""
+    prompt_path = Path(__file__).parent / "prompt.txt"
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"Could not find prompt.txt at {prompt_path}")
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    full_prompt = prompt_template.format(text=article_text)
+def fetch_articles_needing_theme(conn) -> list:
+    """Fetches articles that have a summary but lack a theme."""
+    query = """
+        SELECT id, summary 
+        FROM items 
+        WHERE summary IS NOT NULL 
+          AND TRIM(summary) != ''
+          AND (theme IS NULL OR TRIM(theme) = '')
+        ORDER BY id ASC;
+    """
+    with conn.cursor(cursor_factory=DictCursor) as cur:
+        cur.execute(query)
+        return [dict(row) for row in cur.fetchall()]
 
+def update_article_themes(conn, updates: list):
+    """Updates the themes in the database in a single transaction."""
+    query = """
+        UPDATE items 
+        SET theme = %s 
+        WHERE id = %s;
+    """
+    with conn.cursor() as cur:
+        for update in updates:
+            cur.execute(query, (update["theme"], update["id"]))
+    conn.commit()
+
+def process_batch(batch: list, prompt_template: str) -> list:
+    """Formulates the prompt, calls Gemini API, and returns parsed themes."""
+    formatted_input = [{"id": item["id"], "summary": item["summary"]} for item in batch]
+    formatted_prompt = prompt_template.replace("{articles_json}", json.dumps(formatted_input, indent=2))
+    
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=full_prompt,
+            model=MODEL_NAME,
+            contents=formatted_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2, 
+            ),
         )
-        return response.text.strip() if response.text else None
+        
+        response_text = response.text.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text.split("```json", 1)[1]
+        if response_text.endswith("```"):
+            response_text = response_text.rsplit("```", 1)[0]
+        
+        themes = json.loads(response_text.strip())
+        return themes if isinstance(themes, list) else []
     except Exception as e:
-        print(f"Error communicating with the Gemini API: {e}")
-        return None
+        print(f"API Error processing batch: {e}")
+        return []
 
-def process_themes_in_batches(batch_size=50):
-    prompt_template = load_prompt_template()
-    if not prompt_template:
+def main():
+    print("Connecting to the database...")
+    try:
+        conn = psycopg2.connect(db_url)
+    except Exception as e:
+        print(f"Database connection failed: {e}")
         return
 
     try:
-        conn = psycopg2.connect(db_url)
-        cursor = conn.cursor()
-
-        # Ensure the theme column exists in the items table
-        cursor.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS theme TEXT;")
+        # Ensure the column exists
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS theme TEXT;")
         conn.commit()
 
-        # Select items that have a summary but do not yet have a theme.
-        # This allows the script to be resumed if interrupted.
-        select_query = """
-            SELECT id, summary 
-            FROM items 
-            WHERE summary IS NOT NULL AND (theme IS NULL OR theme = '')
-            ORDER BY id;
-        """
-        cursor.execute(select_query)
-        
-        while True:
-            rows = cursor.fetchmany(batch_size)
-            if not rows:
-                break
+        prompt_template = load_prompt_template()
+        articles = fetch_articles_needing_theme(conn)
+        total_articles = len(articles)
+        print(f"Found {total_articles} articles requiring theme generation.")
 
-            updates = []
-            print(f"Processing batch of {len(rows)} items...")
+        if total_articles == 0:
+            print("No processing required.")
+            return
 
-            for item_id, summary in rows:
-                theme = get_theme(summary, prompt_template)
-                if theme:
-                    updates.append((theme, item_id))
+        for i in range(0, total_articles, BATCH_SIZE):
+            batch = articles[i:i + BATCH_SIZE]
+            print(f"\nProcessing batch {i // BATCH_SIZE + 1} of {(total_articles + BATCH_SIZE - 1) // BATCH_SIZE} (IDs: {batch[0]['id']} to {batch[-1]['id']})...")
+            
+            themes = process_batch(batch, prompt_template)
+            
+            if themes:
+                valid_updates = []
+                batch_ids = {item["id"] for item in batch}
+                
+                for t in themes:
+                    try:
+                        item_id = int(t.get("id"))
+                        theme_text = t.get("theme")
+                        if item_id in batch_ids and theme_text:
+                            valid_updates.append({"id": item_id, "theme": theme_text})
+                            print(f"ID: {item_id:5d} | Selected Theme: {theme_text}")
+                    except (ValueError, TypeError):
+                        continue
 
-            if updates:
-                update_query = "UPDATE items SET theme = %s WHERE id = %s;"
-                # execute_batch is more efficient for batch updates than executing one by one
-                execute_batch(cursor, update_query, updates)
-                conn.commit()
-                print(f"Successfully updated {len(updates)} items in this batch.")
+                if valid_updates:
+                    update_article_themes(conn, valid_updates)
+                    print(f"Successfully updated {len(valid_updates)} articles in this batch.")
+                else:
+                    print("No valid updates found in API response for this batch.")
+            else:
+                print("Skipping batch due to processing error.")
+            
+            # Optional: short sleep between batches to remain well within free tier limits
+            time.sleep(2)
 
-        cursor.close()
+        print("\nTheme categorization process complete.")
+
+    finally:
         conn.close()
-        print("Processing complete.")
-
-    except Exception as e:
-        print(f"An error occurred during database operations: {e}")
 
 if __name__ == "__main__":
-    process_themes_in_batches(batch_size=50)
+    main()
