@@ -13,7 +13,6 @@ from db.database import init_db, ensure_source, get_conn, return_conn
 from db.loader import insert_items, insert_vulnerabilities, insert_hn_seen_ids, insert_comments
 
 
-# ── Helpers ──────────────────────────────────────────────────────
 
 def normalize_date(date_str: str | None) -> str | None:
     if not date_str:
@@ -25,8 +24,7 @@ def normalize_date(date_str: str | None) -> str | None:
         return date_str
 
 
-# ── 1. Text cleaning (HTML + Markdown) ──────────────────────────
-
+# html and markdown
 def clean_text(text: str) -> str:
     text = html.unescape(text)
     text = re.sub(r'<[^>]+>', '', text)
@@ -55,7 +53,6 @@ def clean_value(value):
     return value
 
 
-# ── 2. Batch dedup (before DB insert) ───────────────────────────
 
 def dedup_records(records: list[dict], key: str = "id") -> list[dict]:
     seen = set()
@@ -68,7 +65,6 @@ def dedup_records(records: list[dict], key: str = "id") -> list[dict]:
     return result
 
 
-# ── 3. Source-specific: NVD ─────────────────────────────────────
 
 def extract_nvd_fields(cve_item: dict) -> dict:
     cve = cve_item.get("cve", {})
@@ -99,7 +95,6 @@ def extract_nvd_fields(cve_item: dict) -> dict:
     }
 
 
-# ── 4. Orchestration — one entry point per record ───────────────
 
 SOURCE_HANDLERS = {
     "nvd": extract_nvd_fields,
@@ -175,8 +170,7 @@ def _process_comments_file(stem: str, data: dict, source_type: str) -> None:
                 continue
 
             external_id = comment.get("id_code", "")
-            body_html = comment.get("body_html", "")
-            body_text = clean_text(body_html)
+            body_text = clean_text(comment.get("body_html", ""))
             published_at = normalize_date(comment.get("created_at"))
 
             extra = {}
@@ -188,7 +182,6 @@ def _process_comments_file(stem: str, data: dict, source_type: str) -> None:
                 "item_id": item_id,
                 "external_id": external_id,
                 "author": comment.get("author"),
-                "body_html": body_html,
                 "body_text": body_text,
                 "published_at": published_at,
                 "extra": extra or None,

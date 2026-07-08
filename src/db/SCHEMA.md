@@ -72,7 +72,6 @@ Comments fetched from APIs (e.g., Dev.to article comments). Each comment is link
 | `item_id` | `BIGINT` | `NOT NULL REFERENCES items(id) ON DELETE CASCADE` | FK to the parent item |
 | `external_id` | `TEXT` | `NOT NULL` | Source-specific comment ID (e.g., Dev.to `id_code`) |
 | `author` | `TEXT` | | Comment author username/name |
-| `body_html` | `TEXT` | | Original HTML content of the comment |
 | `body_text` | `TEXT` | | Cleaned plain-text version of the comment |
 | `published_at` | `TIMESTAMPTZ` | | When the comment was posted |
 | `fetched_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | When we fetched it |

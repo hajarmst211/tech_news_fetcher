@@ -45,7 +45,7 @@ def _normalize_item(record: dict, source_type: str) -> dict:
     summary = raw.pop("summary", raw.pop("description", ""))
     url = raw.pop("url", raw.pop("link", raw.pop("html_url", "")))
     author = _extract_author(raw)
-    published_at = _parse_timestamp(raw.pop("published_at", raw.pop("published", raw.pop("created_at", raw.pop("date", None)))))
+    published_at = _parse_timestamp(raw.pop("published_at", raw.pop("published", raw.pop("created_at", raw.pop("date", raw.pop("time", None))))))
     updated_at = _parse_timestamp(raw.pop("updated_at", raw.pop("updated", raw.pop("last_modified", None))))
     content = raw.pop("content", raw.pop("body_markdown", raw.pop("body", raw.pop("text", raw.pop("article_content", None)))))
     content_hash = _compute_content_hash(content)
@@ -205,16 +205,15 @@ def insert_comments(records: list[dict]) -> int:
                     cur.execute(
                         """
                         INSERT INTO comments
-                            (item_id, external_id, author, body_html, body_text,
+                            (item_id, external_id, author, body_text,
                              published_at, extra)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         ON CONFLICT (item_id, external_id) DO NOTHING
                         """,
                         (
                             rec["item_id"],
                             rec["external_id"],
                             rec.get("author"),
-                            rec.get("body_html"),
                             rec.get("body_text"),
                             rec.get("published_at"),
                             Json(rec["extra"]) if rec.get("extra") else None,
