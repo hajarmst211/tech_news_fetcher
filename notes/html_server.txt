@@ -1,0 +1,1 @@
+Serve with python3 -m http.server and open http://localhost:8000/dashboard.html. Run python3 generate_stats.py first to refresh stats.json.

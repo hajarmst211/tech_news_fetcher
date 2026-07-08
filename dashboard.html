@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { brand: { 50: '#f5f3ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' } }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="bg-brand-600 p-2 rounded-lg text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white">Pipeline Dashboard</h1>
+                <p class="text-xs text-slate-400">Tech news aggregation pipeline overview</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="last-updated" class="text-xs text-slate-500"></span>
+            <button onclick="loadStats()" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-lg transition-all flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.253 8H18"></path></svg>
+                Refresh
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-6">
+        <div id="loading" class="flex items-center justify-center h-full">
+            <div class="text-center">
+                <svg class="animate-spin h-8 w-8 text-brand-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <p class="text-slate-400 text-sm">Loading stats...</p>
+                <p class="text-xs text-slate-600 mt-2">Run <code class="bg-slate-900 px-2 py-0.5 rounded text-brand-100">python3 generate_stats.py</code> first.</p>
+            </div>
+        </div>
+        <div id="content" class="max-w-7xl mx-auto space-y-6 hidden"></div>
+    </main>
+
+    <script>
+        async function loadStats() {
+            const loading = document.getElementById('loading');
+            const content = document.getElementById('content');
+            loading.classList.remove('hidden');
+            content.classList.add('hidden');
+
+            try {
+                const resp = await fetch('./stats.json');
+                if (!resp.ok) throw new Error('Not found');
+                const data = await resp.json();
+                render(data);
+                document.getElementById('last-updated').textContent = 'Updated: ' + new Date().toLocaleString();
+                loading.classList.add('hidden');
+                content.classList.remove('hidden');
+            } catch (e) {
+                loading.innerHTML = `
+                    <div class="text-center">
+                        <svg class="h-12 w-12 text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <p class="text-slate-300 font-semibold">Could not load stats.json</p>
+                        <p class="text-sm text-slate-500 mt-2">Run <code class="bg-slate-900 px-2 py-0.5 rounded text-brand-100">python3 generate_stats.py</code> first, then refresh.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function render(d) {
+            const c = document.getElementById('content');
+            const sc = d.summary_content_breakdown;
+            const totalItems = d.db_counts.items;
+            const imp = d.summarizer_impact;
+
+            function statCard(label, value, sub, cls) {
+                return `<div class="bg-slate-900 border border-slate-700 rounded-xl p-5 ${cls || ''}">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider font-medium">${label}</p>
+                    <p class="text-3xl font-bold text-slate-100 font-mono mt-1">${value}</p>
+                    ${sub ? `<p class="text-xs text-slate-500 mt-1">${sub}</p>` : ''}
+                </div>`;
+            }
+
+            function barSegment(val, total, color) {
+                if (val === 0) return '';
+                const pct = (val / total * 100).toFixed(1);
+                return `<div class="${color} h-4" style="width:${pct}%" title="${val} (${pct}%)"></div>`;
+            }
+
+            let html = `
+            <!-- Row 1: Top-level pipeline counts -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                ${statCard('Sources (total)', d.sources.total, `${d.sources.with_items} successfully fetched`)}
+                ${statCard('Items in DB', d.db_counts.items, `${d.items_with_summary} with summaries`)}
+                ${statCard('Comments in DB', d.db_counts.comments, d.items_with_comments > 0 ? `${d.items_with_comments} items have comments` : '')}
+                ${statCard('Vulnerabilities', d.db_counts.vulnerabilities, `${d.db_counts.hn_seen_ids} HN IDs seen`)}
+            </div>
+
+            <!-- Row 2: Sources detail -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Sources</h2>
+                    <span class="text-xs text-slate-500">${d.sources.total} defined, ${d.sources.with_items} with items</span>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+                    ${Object.entries(d.sources.by_type).map(([type, count]) => {
+                        const colors = { devto: 'bg-brand-500/10 text-brand-100 border-brand-500/30', arxiv: 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30', rss: 'bg-amber-500/10 text-amber-200 border-amber-500/30', hn: 'bg-rose-500/10 text-rose-200 border-rose-500/30', github_release: 'bg-cyan-500/10 text-cyan-200 border-cyan-500/30', nvd: 'bg-red-500/10 text-red-200 border-red-500/30' };
+                        return `<div class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-center">
+                            <p class="text-lg font-bold text-slate-100 font-mono">${count}</p>
+                            <p class="text-xs text-slate-400">${type}</p>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div class="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead><tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                            <th class="py-2 px-3">Source</th>
+                            <th class="py-2 px-3">Type</th>
+                            <th class="py-2 px-3">Category</th>
+                            <th class="py-2 px-3 text-right">Items</th>
+                            <th class="py-2 px-3 text-center">Status</th>
+                        </tr></thead>
+                        <tbody>${d.sources.list.map(s => `
+                            <tr class="border-b border-slate-800 hover:bg-slate-800/50 ${s.items === 0 ? 'text-slate-600' : 'text-slate-300'}">
+                                <td class="py-1.5 px-3 font-mono text-xs">${s.name}</td>
+                                <td class="py-1.5 px-3 text-xs">${s.type}</td>
+                                <td class="py-1.5 px-3 text-xs">${s.category || '—'}</td>
+                                <td class="py-1.5 px-3 text-right font-mono text-xs ${s.items > 0 ? 'text-slate-100 font-semibold' : ''}">${s.items}</td>
+                                <td class="py-1.5 px-3 text-center">${s.items > 0 ? '<span class="text-emerald-400 text-xs">● fetched</span>' : '<span class="text-slate-600 text-xs">○ empty</span>'}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Row 3: Summary / Content Breakdown -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Summary / Content Breakdown</h2>
+                    <span class="text-xs text-slate-500">${totalItems} total items</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-emerald-300 font-mono">${sc['summary AND content'] || 0}</p>
+                        <p class="text-xs text-emerald-400/70 mt-1">summary AND content</p>
+                    </div>
+                    <div class="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-amber-300 font-mono">${sc['summary, no content'] || 0}</p>
+                        <p class="text-xs text-amber-400/70 mt-1">summary, no content</p>
+                    </div>
+                    <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-blue-300 font-mono">${sc['no summary, content'] || 0}</p>
+                        <p class="text-xs text-blue-400/70 mt-1">no summary, content</p>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-slate-300 font-mono">${sc['no summary, no content'] || 0}</p>
+                        <p class="text-xs text-slate-500 mt-1">no summary, no content</p>
+                    </div>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-4 overflow-hidden flex">
+                    ${barSegment(sc['summary AND content'] || 0, totalItems, 'bg-emerald-500')}
+                    ${barSegment(sc['summary, no content'] || 0, totalItems, 'bg-amber-500')}
+                    ${barSegment(sc['no summary, content'] || 0, totalItems, 'bg-blue-500')}
+                    ${barSegment(sc['no summary, no content'] || 0, totalItems, 'bg-slate-600')}
+                </div>
+                <div class="flex gap-4 mt-2 text-[10px] text-slate-500">
+                    <span>● summary+content</span>
+                    <span>● summary only</span>
+                    <span>● content only</span>
+                    <span>● neither</span>
+                </div>
+            </div>
+
+            <!-- Row 4: Summarizer Before vs After -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Summarizer Impact</h2>
+                    <span class="text-xs text-slate-500">${d.summarizer_candidates} candidates remaining</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Before Column -->
+                    <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+                        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-4 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                            Before Summarizer
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400">Content, no summary</span>
+                                <span class="text-lg font-bold text-blue-300 font-mono">${imp.before.content_no_summary}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400">Summary, no content</span>
+                                <span class="text-lg font-bold text-amber-300 font-mono">${imp.before.summary_no_content}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-sm text-slate-400">No summary, no content</span>
+                                <span class="text-lg font-bold text-slate-400 font-mono">${imp.before.neither}</span>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-slate-700">
+                                <p class="text-xs text-slate-500">${imp.before.content_no_summary} items were candidates for summarization (had full article content but no summary).</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- After Column -->
+                    <div class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
+                        <h3 class="text-sm font-semibold text-emerald-300 uppercase tracking-wide mb-4 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            After Summarizer
+                        </h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400">Summary AND content</span>
+                                <span class="text-lg font-bold text-emerald-300 font-mono">${imp.after.summary_and_content}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400">Content, no summary</span>
+                                <span class="text-lg font-bold text-blue-300 font-mono">${imp.after.content_no_summary}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
+                                <span class="text-sm text-slate-400">Summary, no content</span>
+                                <span class="text-lg font-bold text-amber-300 font-mono">${imp.after.summary_no_content}</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-sm text-slate-400">No summary, no content</span>
+                                <span class="text-lg font-bold text-slate-400 font-mono">${imp.after.neither}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress bar -->
+                <div class="mt-6 bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-slate-400">Summarization progress</span>
+                        <span class="text-slate-100 font-mono font-bold">${totalItems > 0 ? ((imp.after.summary_and_content + imp.after.summary_no_content) / totalItems * 100).toFixed(1) : 0}%</span>
+                    </div>
+                    <div class="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                        ${barSegment(imp.after.summary_and_content, totalItems, 'bg-emerald-500')}
+                        ${barSegment(imp.after.summary_no_content, totalItems, 'bg-amber-500')}
+                    </div>
+                    <div class="flex gap-4 mt-1 text-[10px] text-slate-500">
+                        <span>● from summarizer</span>
+                        <span>● from source</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 5: Items by source type & top sources -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                    <h2 class="text-lg font-bold text-white mb-4">Items by Source Type</h2>
+                    <div class="space-y-3">
+                        ${(() => {
+                            const entries = Object.entries(d.items_by_source_type).sort((a, b) => b[1] - a[1]);
+                            const maxVal = Math.max(...entries.map(e => e[1]), 1);
+                            const typeColors = { devto: 'bg-brand-500', arxiv: 'bg-emerald-500', rss: 'bg-amber-500', hn: 'bg-rose-500', github_release: 'bg-cyan-500', nvd: 'bg-red-500' };
+                            return entries.map(([type, count]) => `
+                                <div>
+                                    <div class="flex justify-between text-sm mb-1">
+                                        <span class="text-slate-300">${type}${count === 0 ? ' <span class="text-slate-600">(no data)</span>' : ''}</span>
+                                        <span class="text-slate-100 font-mono font-bold">${count}</span>
+                                    </div>
+                                    <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+                                        <div class="${typeColors[type] || 'bg-slate-500'} h-3 rounded-full transition-all" style="width:${(count / maxVal * 100).toFixed(0)}%"></div>
+                                    </div>
+                                </div>
+                            `).join('');
+                        })()}
+                    </div>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                    <h2 class="text-lg font-bold text-white mb-4">Top Sources by Items</h2>
+                    <div class="space-y-2">
+                        ${(d.top_sources_by_items || []).map(s => `
+                            <div class="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2">
+                                <span class="text-sm text-slate-300 font-mono truncate">${s.name.length > 35 ? s.name.slice(0, 35) + '...' : s.name}</span>
+                                <span class="text-sm font-bold text-slate-100 font-mono ml-2">${s.count}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 6: Comments -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Comments</h2>
+                    <span class="text-xs text-slate-500">${d.db_counts.comments} total, ${d.items_with_comments} items with comments</span>
+                </div>
+                ${d.db_counts.comments > 0 ? `
+                <div class="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead><tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                            <th class="py-2 px-3">Source</th>
+                            <th class="py-2 px-3 text-right">Comment Count</th>
+                        </tr></thead>
+                        <tbody>${(d.comments_by_source || []).map(s => `
+                            <tr class="border-b border-slate-800 hover:bg-slate-800/50 text-slate-300">
+                                <td class="py-1.5 px-3 font-mono text-xs">${s.source}</td>
+                                <td class="py-1.5 px-3 text-right font-mono text-slate-100">${s.count}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>
+                </div>
+                ` : `<p class="text-sm text-slate-500 text-center py-8">No comments in database yet. Comments are collected from Dev.to, Hacker News, and Reddit sources.</p>`}
+            </div>
+
+            <!-- Row 7: Themes -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-white">Extracted Themes</h2>
+                    <span class="text-xs text-slate-500">${d.themes.total_distinct} distinct</span>
+                </div>
+
+                <!-- Tag cloud -->
+                <div class="flex flex-wrap gap-2 mb-6">
+                    ${d.themes.list.slice(0, 80).map(t => {
+                        const size = t.count >= 5 ? 'text-base' : t.count >= 3 ? 'text-sm' : 'text-xs';
+                        const color = t.count >= 5 ? 'bg-brand-500/15 text-brand-100 border-brand-500/40' : t.count >= 3 ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30' : 'bg-slate-800 text-slate-300 border-slate-700';
+                        return `<span class="${size} ${color} px-2.5 py-1 rounded-full border font-medium">${t.theme} <span class="opacity-60">(${t.count})</span></span>`;
+                    }).join('')}
+                    ${d.themes.total_distinct > 80 ? `<span class="text-xs text-slate-500 px-2 py-1">+${d.themes.total_distinct - 80} more...</span>` : ''}
+                </div>
+
+                <!-- Full theme list with search -->
+                <div x-data="{ search: '' }">
+                    <div class="relative mb-3">
+                        <input type="text" id="theme-search" oninput="filterThemes()" placeholder="Search themes..." class="w-full bg-slate-800 border border-slate-700 text-slate-100 text-xs pl-8 pr-4 py-2 rounded-lg focus:outline-none focus:border-brand-500 transition-all">
+                        <svg class="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <div class="overflow-x-auto max-h-80 overflow-y-auto" id="theme-table-container">
+                        <table class="w-full text-left text-sm" id="theme-table">
+                            <thead><tr class="text-xs font-semibold uppercase tracking-wider text-slate-500 border-b border-slate-700">
+                                <th class="py-2 px-3">Theme</th>
+                                <th class="py-2 px-3 text-right">Count</th>
+                            </tr></thead>
+                            <tbody>${d.themes.list.map(t => `
+                                <tr class="theme-row border-b border-slate-800 hover:bg-slate-800/50 text-slate-300">
+                                    <td class="theme-name py-1.5 px-3">${t.theme}</td>
+                                    <td class="py-1.5 px-3 text-right font-mono text-slate-100">${t.count}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            `;
+
+            c.innerHTML = html;
+        }
+
+        function filterThemes() {
+            const q = document.getElementById('theme-search').value.toLowerCase();
+            document.querySelectorAll('.theme-row').forEach(row => {
+                const name = row.querySelector('.theme-name').textContent.toLowerCase();
+                row.style.display = name.includes(q) ? '' : 'none';
+            });
+        }
+
+        loadStats();
+    </script>
+</body>
+</html>

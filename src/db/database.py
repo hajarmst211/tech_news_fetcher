@@ -3,11 +3,12 @@ from pathlib import Path
 
 import psycopg2
 from psycopg2 import pool
-from psycopg2.extras import Json
+from dotenv import load_dotenv 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+load_dotenv(PROJECT_ROOT.parent / ".env") 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 _connection_pool = None
@@ -38,6 +39,21 @@ def init_db():
     except psycopg2.Error as e:
         print(f"  [DB ERROR] Failed to initialise tables: {e}")
         raise
+    finally:
+        return_conn(conn)
+
+
+def update_source_status(name: str, status: str) -> None:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE sources SET last_fetch_status = %s, last_fetched_at = now() WHERE name = %s",
+                (status, name),
+            )
+        conn.commit()
+    except psycopg2.Error as e:
+        print(f"  [DB ERROR] Failed to update status for '{name}': {e}")
     finally:
         return_conn(conn)
 

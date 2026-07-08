@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +15,9 @@ import trafilatura
 from playwright.sync_api import sync_playwright
 
 from general_api_fetcher import GeneralApiFetcher
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from db.database import update_source_status
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
@@ -108,6 +112,11 @@ def fetch_api_source(source: dict) -> None:
         else:
             print(f"  [WARN] Env var '{env_api_key}' not set for '{name}'")
 
+    if "api.github.com" in base_url:
+        github_token = os.getenv("GITHUB_TOKEN")
+        if github_token:
+            headers["Authorization"] = f"token {github_token}"
+
     ssl_verify = source.get("ssl_verify", True)
     fetcher = GeneralApiFetcher(base_url=base_url, headers=headers, timeout=15, ssl_verify=ssl_verify)
     response_type = source.get("response_type", "json")
@@ -127,6 +136,7 @@ def fetch_api_source(source: dict) -> None:
             raw = fetcher.request_raw(endpoint, params=params)
             if raw is None:
                 print(f"  [FAIL] {name} — request returned no data")
+                update_source_status(name, "failed")
                 return
             entries = _xml_entries_to_dicts(raw)
             if entries:
@@ -139,6 +149,7 @@ def fetch_api_source(source: dict) -> None:
         data = fetcher.request(endpoint, params=params)
         if data is None:
             print(f"  [FAIL] {name} — request returned no data")
+            update_source_status(name, "failed")
             return
 
         if source.get("fetch_full_content") and isinstance(data, list):
@@ -215,6 +226,8 @@ def fetch_api_source(source: dict) -> None:
         _annotate_records(data)
         _save_json(data, name)
         print(f"  [OK]   {name} — data saved")
+
+    update_source_status(name, "success")
 
 
 def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
@@ -338,7 +351,48 @@ def _enrich_github_release(data: dict, fetcher: GeneralApiFetcher, name: str) ->
 
 
 
-def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
+def _fetch_hn_comments(fetcher: GeneralApiFetcher, item: dict) -> list[dict]:
+    kids = item.get("kids", [])
+    if not kids:
+        return []
+
+    all_comments = {}
+    pending = set(kids)
+
+    while pending:
+        batch = list(pending)
+        pending.clear()
+        for cid in batch:
+            time.sleep(0.1)
+            comment = fetcher.request(f"/v0/item/{cid}.json")
+            if comment and isinstance(comment, dict) and comment.get("type") == "comment":
+                if comment.get("deleted") or comment.get("dead"):
+                    continue
+                all_comments[cid] = comment
+                for nested in comment.get("kids", []):
+                    if nested not in all_comments:
+                        pending.add(nested)
+
+    transformed = []
+    for cid, comment in all_comments.items():
+        raw_time = comment.get("time")
+        created_at = (
+            datetime.utcfromtimestamp(raw_time).isoformat()
+            if isinstance(raw_time, (int, float))
+            else None
+        )
+        transformed.append({
+            "id_code": str(cid),
+            "author": comment.get("by"),
+            "body_html": comment.get("text", ""),
+            "created_at": created_at,
+            "parent": comment.get("parent"),
+        })
+
+    return transformed
+
+
+def fetch_hacker_news(fetcher: GeneralApiFetcher, source_name: str = "Hacker News (Item Detail)") -> None:
     print(f"\n{'='*60}")
     print("  Hacker News — Top Stories Details")
     print(f"{'='*60}")
@@ -346,6 +400,7 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
     ids_data = fetcher.request("/v0/newstories.json", params={"print": "pretty"})
     if not ids_data or not isinstance(ids_data, list):
         print(f"  [FAIL] Hacker News — could not fetch story IDs")
+        update_source_status(source_name, "failed")
         return
 
     _save_json(ids_data, "Hacker News (New Stories)")
@@ -373,13 +428,30 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher) -> None:
                 print(f"  [WARN] Hacker News — failed to fetch story {sid}")
 
     if items:
+        print(f"  Fetching comments for {len(items)} stories...")
+        all_comments = {}
         for item in items:
-            item.pop("id", None)
+            story_id = item.get("id")
+            if not story_id:
+                continue
+            comments = _fetch_hn_comments(fetcher, item)
+            if comments:
+                all_comments[str(story_id)] = comments
+                print(f"    Fetched {len(comments)} comments for story {story_id}")
+
+        if all_comments:
+            _save_json(all_comments, "Hacker News (Item Detail) Comments")
+            print(f"  [OK]   Hacker News — comments saved ({len(all_comments)} stories with comments)")
+        else:
+            print(f"  [WARN] Hacker News — no comments found")
+
         _annotate_records(items)
         _save_json(items, "Hacker News (Item Detail)")
         print(f"  [OK]   Hacker News (Item Detail) — {len(items)}/{HN_TOP_STORIES_TO_FETCH} stories saved")
+        update_source_status(source_name, "success")
     else:
         print(f"  [FAIL] Hacker News — no story details fetched")
+        update_source_status(source_name, "failed")
 
 
 def main() -> None:
@@ -387,15 +459,23 @@ def main() -> None:
     api_sources = [s for s in sources if s.get("type") == "api"]
 
     hn_source = next((s for s in api_sources if s.get("hn_item_fetch")), None)
+    nvd_sources = [s for s in api_sources if "nvd.nist.gov" in s.get("base_url", "")]
     regular_sources = [
         s for s in api_sources
         if not s.get("hn_item_fetch") and not s.get("hn_id_list")
+        and "nvd.nist.gov" not in s.get("base_url", "")
     ]
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(fetch_api_source, s) for s in regular_sources]
         for future in as_completed(futures):
             future.result()
+
+    has_nvd_key = bool(os.getenv("NVD_API_KEY"))
+    nvd_delay = 1 if has_nvd_key else 6
+    for s in nvd_sources:
+        fetch_api_source(s)
+        time.sleep(nvd_delay)
 
     if hn_source:
         hn_headers = hn_source.get("headers", {}).copy()
@@ -406,7 +486,7 @@ def main() -> None:
             timeout=15,
             ssl_verify=hn_ssl_verify,
         )
-        fetch_hacker_news(hn_fetcher)
+        fetch_hacker_news(hn_fetcher, hn_source["name"])
 
 
 if __name__ == "__main__":

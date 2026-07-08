@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -8,6 +9,10 @@ from pathlib import Path
 import feedparser
 import yaml
 from general_api_fetcher import GeneralApiFetcher
+from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from db.database import update_source_status
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -98,14 +103,32 @@ def fetch_rss_feed(source: dict) -> None:
     print(f"  {name}")
     print(f"{'='*60}")
 
-    if raw_xml is None:
-        print(f"  [FAIL] {name} — request returned no data")
-        return
+    if raw_xml is None or ("infoq" in name.lower() and "cloudflare" in raw_xml.lower() if raw_xml else True):
+        if "infoq" in name.lower():
+            print(f"  Standard request failed, falling back to Playwright for {name}...")
+            try:
+                with sync_playwright() as pw:
+                    browser = pw.chromium.launch(headless=True)
+                    page = browser.new_page()
+                    page.goto(base_url + endpoint, wait_until="networkidle", timeout=30000)
+                    #for debugging
+                    page.screenshot(path="debug_screenshot.png") 
+                    raw_xml = page.inner_text("pre")
+                    browser.close()
+            except Exception as e:
+                print(f"  [FAIL] Playwright fallback failed for {name}: {e}")
+                update_source_status(name, "failed")
+                return
+        else:
+            print(f"  [FAIL] {name} — request returned no data")
+            update_source_status(name, "failed")
+            return
 
     feed = feedparser.parse(raw_xml)
 
     if feed.bozo and not feed.entries:
         print(f"  [FAIL] {name} — feed parse error: {feed.bozo_exception}")
+        update_source_status(name, "failed")
         return
 
     print(f"  Found {len(feed.entries)} entries")
@@ -120,6 +143,7 @@ def fetch_rss_feed(source: dict) -> None:
 
     if not feed.entries:
         print(f"  [WARN] {name} — 0 entries (feed may be empty)")
+        update_source_status(name, "success")
         return
 
     entries_data = [_entry_to_dict(e) for e in feed.entries]
@@ -190,6 +214,7 @@ def fetch_rss_feed(source: dict) -> None:
 
     _save_json(entries_data, name)
     print(f"  [OK]   {name} — {len(feed.entries)} entries saved")
+    update_source_status(name, "success")
 
 
 def main() -> None:

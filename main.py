@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+LOG_FILE = PROJECT_ROOT / "data" / "pipeline.log"
 
 
 def run_step(label: str, cmd: list[str], cwd: str) -> None:
@@ -23,6 +24,11 @@ def run_step(label: str, cmd: list[str], cwd: str) -> None:
 
 
 def main() -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    log = open(LOG_FILE, "w")
+    log.write(f"Pipeline started at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    old_stdout = sys.stdout
+    sys.stdout = log
     t0 = time.time()
 
     run_step(
@@ -53,6 +59,10 @@ def main() -> None:
     print(f"\n{'='*60}")
     print(f"  Pipeline finished in {elapsed:.1f}s")
     print(f"{'='*60}")
+
+    sys.stdout = old_stdout
+    log.close()
+    print(f"Log written to {LOG_FILE}")
 
 
 if __name__ == "__main__":
