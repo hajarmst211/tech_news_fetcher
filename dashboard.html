@@ -89,6 +89,70 @@
             const totalItems = d.db_counts.items;
             const imp = d.summarizer_impact;
 
+            // Search broadly across possible property paths for 'neither' sources
+            const neitherSources = d.neither_sources || 
+                                   (d.summarizer_impact && (
+                                       d.summarizer_impact.neither_sources || 
+                                       (d.summarizer_impact.before && d.summarizer_impact.before.neither_sources) || 
+                                       (d.summarizer_impact.after && d.summarizer_impact.after.neither_sources)
+                                   )) || [];
+
+            // Search broadly across possible property paths for 'content but no summary' sources
+            const contentNoSummarySources = d.content_no_summary_sources || 
+                                            d.no_summary_sources ||
+                                            d.content_only_sources ||
+                                            (d.summarizer_impact && (
+                                                d.summarizer_impact.content_no_summary_sources || 
+                                                d.summarizer_impact.sources_content_no_summary ||
+                                                d.summarizer_impact.no_summary_sources ||
+                                                d.summarizer_impact.content_only_sources ||
+                                                (d.summarizer_impact.after && (
+                                                    d.summarizer_impact.after.content_no_summary_sources ||
+                                                    d.summarizer_impact.after.sources_content_no_summary ||
+                                                    d.summarizer_impact.after.no_summary_sources ||
+                                                    d.summarizer_impact.after.content_only_sources
+                                                )) ||
+                                                (d.summarizer_impact.before && (
+                                                    d.summarizer_impact.before.content_no_summary_sources ||
+                                                    d.summarizer_impact.before.sources_content_no_summary
+                                                ))
+                                            )) || [];
+
+            // Dynamic fallbacks when arrays are not explicitly defined in JSON root/impact objects
+            let fallbackNeither = [];
+            let fallbackContentNoSummary = [];
+
+            if (d.sources && d.sources.list) {
+                // 1. Fallback for 'neither' (no content & no summary): identifying sources with 0 items
+                fallbackNeither = d.sources.list.filter(s => s.items === 0).map(s => s.name);
+
+                // 2. Fallback for 'content, no summary':
+                // Check if the source objects themselves have individual keys indicating unsummarized status
+                fallbackContentNoSummary = d.sources.list
+                    .filter(s => s.items > 0)
+                    .map(s => {
+                        const count = s.no_summary !== undefined ? s.no_summary :
+                                      s.items_without_summary !== undefined ? s.items_without_summary :
+                                      s.content_no_summary !== undefined ? s.content_no_summary :
+                                      s.unsummarized !== undefined ? s.unsummarized : null;
+                        if (count !== null && count > 0) {
+                            return { name: s.name, count: count };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+
+                // If no detailed source-level unsummarized keys exist, list active sources (items > 0)
+                if (fallbackContentNoSummary.length === 0 && contentNoSummarySources.length === 0) {
+                    fallbackContentNoSummary = d.sources.list
+                        .filter(s => s.items > 0)
+                        .map(s => ({ name: s.name, count: s.items }));
+                }
+            }
+
+            const displayNeitherSources = neitherSources.length > 0 ? neitherSources : fallbackNeither;
+            const displayContentNoSummarySources = contentNoSummarySources.length > 0 ? contentNoSummarySources : fallbackContentNoSummary;
+
             function statCard(label, value, sub, cls) {
                 return `<div class="bg-slate-900 border border-slate-700 rounded-xl p-5 ${cls || ''}">
                     <p class="text-xs text-slate-400 uppercase tracking-wider font-medium">${label}</p>
@@ -101,6 +165,19 @@
                 if (val === 0) return '';
                 const pct = (val / total * 100).toFixed(1);
                 return `<div class="${color} h-4" style="width:${pct}%" title="${val} (${pct}%)"></div>`;
+            }
+
+            function renderSourceTags(sources, fallbackText = 'None') {
+                if (!sources || sources.length === 0) {
+                    return `<span class="text-slate-600 italic text-xs">${fallbackText}</span>`;
+                }
+                return `<div class="flex flex-wrap gap-1.5 mt-1.5">
+                    ${sources.map(s => {
+                        const name = typeof s === 'string' ? s : (s.name || s.source || '');
+                        const count = typeof s === 'object' && s.count !== undefined ? ` (${s.count})` : '';
+                        return `<span class="bg-slate-800 border border-slate-700 text-slate-300 px-2 py-0.5 rounded text-[10px] font-mono">${name}${count}</span>`;
+                    }).join('')}
+                </div>`;
             }
 
             let html = `
@@ -135,6 +212,7 @@
                             <th class="py-2 px-3">Category</th>
                             <th class="py-2 px-3 text-right">Items</th>
                             <th class="py-2 px-3 text-center">Status</th>
+                            <th class="py-2 px-3 text-right">Code</th>
                         </tr></thead>
                         <tbody>${d.sources.list.map(s => `
                             <tr class="border-b border-slate-800 hover:bg-slate-800/50 ${s.items === 0 ? 'text-slate-600' : 'text-slate-300'}">
@@ -142,7 +220,8 @@
                                 <td class="py-1.5 px-3 text-xs">${s.type}</td>
                                 <td class="py-1.5 px-3 text-xs">${s.category || '—'}</td>
                                 <td class="py-1.5 px-3 text-right font-mono text-xs ${s.items > 0 ? 'text-slate-100 font-semibold' : ''}">${s.items}</td>
-                                <td class="py-1.5 px-3 text-center">${s.items > 0 ? '<span class="text-emerald-400 text-xs">● fetched</span>' : '<span class="text-slate-600 text-xs">○ empty</span>'}</td>
+                                <td class="py-1.5 px-3 text-center">${s.status === 'success' ? '<span class="text-emerald-400 text-xs" title="' + (s.last_fetched_at || '') + '">● success</span>' : s.status === 'failed' ? '<span class="text-red-400 text-xs" title="' + (s.last_fetched_at || '') + '">● failed</span>' : '<span class="text-slate-600 text-xs" title="' + (s.last_fetched_at || '') + '">○ unknown</span>'}</td>
+                                <td class="py-1.5 px-3 text-right font-mono text-xs text-slate-400">${s.status_code != null ? s.status_code : '—'}</td>
                             </tr>
                         `).join('')}</tbody>
                     </table>
@@ -210,9 +289,15 @@
                                 <span class="text-sm text-slate-400">Summary, no content</span>
                                 <span class="text-lg font-bold text-amber-300 font-mono">${imp.before.summary_no_content}</span>
                             </div>
-                            <div class="flex justify-between items-center py-2">
-                                <span class="text-sm text-slate-400">No summary, no content</span>
-                                <span class="text-lg font-bold text-slate-400 font-mono">${imp.before.neither}</span>
+                            <div class="py-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-slate-400">No summary, no content</span>
+                                    <span class="text-lg font-bold text-slate-400 font-mono">${imp.before.neither}</span>
+                                </div>
+                                <div class="mt-2 pt-1 border-t border-slate-800">
+                                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Sources with no content/summary:</p>
+                                    ${renderSourceTags(displayNeitherSources, 'No empty sources')}
+                                </div>
                             </div>
                             <div class="mt-3 pt-3 border-t border-slate-700">
                                 <p class="text-xs text-slate-500">${imp.before.content_no_summary} items were candidates for summarization (had full article content but no summary).</p>
@@ -231,9 +316,15 @@
                                 <span class="text-sm text-slate-400">Summary AND content</span>
                                 <span class="text-lg font-bold text-emerald-300 font-mono">${imp.after.summary_and_content}</span>
                             </div>
-                            <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
-                                <span class="text-sm text-slate-400">Content, no summary</span>
-                                <span class="text-lg font-bold text-blue-300 font-mono">${imp.after.content_no_summary}</span>
+                            <div class="py-2 border-b border-slate-700/50">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-slate-400">Content, no summary</span>
+                                    <span class="text-lg font-bold text-blue-300 font-mono">${imp.after.content_no_summary}</span>
+                                </div>
+                                <div class="mt-2 pt-1 border-t border-slate-700">
+                                    <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Remaining sources with content but no summary:</p>
+                                    ${renderSourceTags(displayContentNoSummarySources, 'No remaining sources')}
+                                </div>
                             </div>
                             <div class="flex justify-between items-center py-2 border-b border-slate-700/50">
                                 <span class="text-sm text-slate-400">Summary, no content</span>

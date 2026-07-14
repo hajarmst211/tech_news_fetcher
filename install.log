@@ -1,0 +1,8 @@
+[09:23:26 2026-07-11] FETCHING Version 2.44.0
+[09:23:26 2026-07-11] DOWNLOADING https://github.com/spicetify/cli/releases/download/v2.44.0/spicetify-2.44.0-linux-amd64.tar.gz
+[09:23:33 2026-07-11] EXTRACTING /home/hajora/.spicetify/spicetify.tar.gz
+[09:23:33 2026-07-11] SETTING EXECUTABLE PERMISSIONS TO /home/hajora/.spicetify/spicetify
+[09:23:33 2026-07-11] REMOVING /home/hajora/.spicetify/spicetify.tar.gz
+[09:23:33 2026-07-11] APPENDING /home/hajora/.spicetify to PATH in /home/hajora/.bashrc
+[09:23:34 2026-07-11] spicetify v2.44.0 was installed successfully to /home/hajora/.spicetify
+[09:23:34 2026-07-11] Run 'spicetify --help' to get started

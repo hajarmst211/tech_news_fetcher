@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import time
+import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -25,6 +26,12 @@ CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 HN_TOP_STORIES_TO_FETCH = 10
+
+db_lock = threading.Lock()
+
+def safe_update_source_status(*args, **kwargs):
+    with db_lock:
+        update_source_status(*args, **kwargs)
 
 
 def load_sources() -> list[dict]:
@@ -99,6 +106,7 @@ def _fetch_url_content(url: str) -> str | None:
 
 def fetch_api_source(source: dict) -> None:
     name = source["name"]
+    sanitized_name = _sanitize_name(name)
     base_url = source["base_url"]
     endpoint = source["endpoint"]
     params = source.get("params", {})
@@ -129,14 +137,13 @@ def fetch_api_source(source: dict) -> None:
         data = fetcher.request(endpoint, params=params)
         if data is not None:
             _annotate_records(data)
-            _print_json_source(data)
             _save_json(data, name)
             print(f"  [OK]   {name} — data saved (JSON)")
         else:
             raw = fetcher.request_raw(endpoint, params=params)
             if raw is None:
                 print(f"  [FAIL] {name} — request returned no data")
-                update_source_status(name, "failed")
+                safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
                 return
             entries = _xml_entries_to_dicts(raw)
             if entries:
@@ -149,7 +156,7 @@ def fetch_api_source(source: dict) -> None:
         data = fetcher.request(endpoint, params=params)
         if data is None:
             print(f"  [FAIL] {name} — request returned no data")
-            update_source_status(name, "failed")
+            safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
             return
 
         if source.get("fetch_full_content") and isinstance(data, list):
@@ -180,12 +187,12 @@ def fetch_api_source(source: dict) -> None:
                 time.sleep(0.5)
                 comments = fetcher.request("/api/comments", params={"a_id": article_id})
                 if comments and isinstance(comments, list) and len(comments) > 0:
-                    all_comments[str(article_id)] = comments
+                    all_comments[str(article_id)] = {c["id_code"]: c for c in comments if "id_code" in c}
                     print(f"    Fetched {len(comments)} comments for article {article_id}")
 
             if all_comments:
                 for article_comments in all_comments.values():
-                    for comment in article_comments:
+                    for comment in article_comments.values():
                         comment.pop("user", None)
                         comment.pop("children", None)
                 _annotate_records(all_comments)
@@ -227,7 +234,7 @@ def fetch_api_source(source: dict) -> None:
         _save_json(data, name)
         print(f"  [OK]   {name} — data saved")
 
-    update_source_status(name, "success")
+    safe_update_source_status(sanitized_name, "success", getattr(fetcher, "last_status_code", None))
 
 
 def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
@@ -280,7 +287,6 @@ def _xml_entries_to_dicts(raw_xml: str) -> list[dict]:
         result.append(item)
 
     return result
-
 
 
 def _parse_last_page_from_link(link_header: str | None) -> int | None:
@@ -348,9 +354,6 @@ def _enrich_github_release(data: dict, fetcher: GeneralApiFetcher, name: str) ->
     return enriched
 
 
-
-
-
 def _fetch_hn_comments(fetcher: GeneralApiFetcher, item: dict) -> list[dict]:
     kids = item.get("kids", [])
     if not kids:
@@ -393,6 +396,8 @@ def _fetch_hn_comments(fetcher: GeneralApiFetcher, item: dict) -> list[dict]:
 
 
 def fetch_hacker_news(fetcher: GeneralApiFetcher, source_name: str = "Hacker News (Item Detail)") -> None:
+    sanitized_name = _sanitize_name(source_name)
+
     print(f"\n{'='*60}")
     print("  Hacker News — Top Stories Details")
     print(f"{'='*60}")
@@ -400,7 +405,7 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher, source_name: str = "Hacker New
     ids_data = fetcher.request("/v0/newstories.json", params={"print": "pretty"})
     if not ids_data or not isinstance(ids_data, list):
         print(f"  [FAIL] Hacker News — could not fetch story IDs")
-        update_source_status(source_name, "failed")
+        safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
         return
 
     _save_json(ids_data, "Hacker News (New Stories)")
@@ -448,10 +453,10 @@ def fetch_hacker_news(fetcher: GeneralApiFetcher, source_name: str = "Hacker New
         _annotate_records(items)
         _save_json(items, "Hacker News (Item Detail)")
         print(f"  [OK]   Hacker News (Item Detail) — {len(items)}/{HN_TOP_STORIES_TO_FETCH} stories saved")
-        update_source_status(source_name, "success")
+        safe_update_source_status(sanitized_name, "success", getattr(fetcher, "last_status_code", None))
     else:
         print(f"  [FAIL] Hacker News — no story details fetched")
-        update_source_status(source_name, "failed")
+        safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
 
 
 def main() -> None:
@@ -490,4 +495,21 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_filepath = log_dir / f"api_fetcher_{date_str}.log"
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    with open(log_filepath, "a", encoding="utf-8", buffering=1) as log_file:
+        sys.stdout = log_file
+        sys.stderr = log_file
+        try:
+            main()
+        except Exception as e:
+            import traceback
+            traceback.print_exc(file=log_file)
+            raise e
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr

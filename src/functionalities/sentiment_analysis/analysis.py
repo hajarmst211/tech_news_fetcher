@@ -19,10 +19,10 @@ db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     raise ValueError("Please set the DATABASE_URL environment variable.")
 
-MODEL_NAME = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
+MODEL_NAME = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 BATCH_SIZE = 50  
 
-print("Initializing quantized model...")
+print("Initializing model...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 raw_model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
 
@@ -40,9 +40,12 @@ sentiment_pipeline = pipeline(
 )
 
 LABEL_MAPPING = {
-    "positive": "positive",
+    "negative": "negative",
     "neutral": "neutral",
-    "negative": "negative"
+    "positive": "positive",
+    "label_0": "negative",
+    "label_1": "neutral",
+    "label_2": "positive"
 }
 
 def fetch_comments_needing_sentiment(conn) -> list:
@@ -80,13 +83,15 @@ def process_batch(batch: list) -> list:
         truncated_text = text[:1500] if text else ""
         
         if not truncated_text.strip():
-            updates.append((LABEL_MAPPING["neutral"], 0.0, comment_id))
+            updates.append(("neutral", 0.0, comment_id))
             continue
         
         try:
             result = sentiment_pipeline(truncated_text)[0]
             raw_label = result["label"].lower()
             score = result["score"]
+            
+            # Use mapping to resolve to "positive", "neutral", or "negative"
             label = LABEL_MAPPING.get(raw_label, "neutral")
             updates.append((label, score, comment_id))
         except Exception as e:
@@ -95,7 +100,6 @@ def process_batch(batch: list) -> list:
             
     return updates
 
-# 6. Main Orchestration Function
 def main():
     print("Connecting to the database...")
     try:

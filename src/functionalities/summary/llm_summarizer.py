@@ -1,5 +1,6 @@
 import json
 import os
+import time  
 from pathlib import Path
 from google import genai
 from google.genai import types
@@ -17,17 +18,19 @@ else:
     load_dotenv()
 
 
-api_key = os.environ.get("GEMINI_SUMMARY_KEY") or os.environ.get("GEMINI_API_KEY")
+api_key_primary = os.environ.get("GEMINI_SUMMARY_KEY") or os.environ.get("GEMINI_API_KEY")
+api_key_replacement = os.environ.get("GEMINI_REPLACEMENT_KEY")
 
-if not api_key:
+if not api_key_primary:
     raise ValueError("Please set the GEMINI_SUMMARY_KEY or GEMINI_API_KEY environment variable.")
 
 db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     raise ValueError("Please set the DATABASE_URL environment variable.")
 
-# Initialize the Gemini client
-client = genai.Client(api_key=api_key)
+# Track the current active key and initialize the Gemini client
+current_key = api_key_primary
+client = genai.Client(api_key=current_key)
 
 BATCH_SIZE = 15  
 MODEL_NAME = "gemini-2.5-flash"  
@@ -42,13 +45,17 @@ def load_prompt_template() -> str:
 
 
 def fetch_articles_needing_summary(conn) -> list:
-    """Fetches articles that have content but lack a summary."""
+    """Fetches articles that need a summary: no summary, or existing summary
+    ends with '...' and full content is available for a better one."""
     query = """
-        SELECT id, content 
-        FROM items 
-        WHERE (summary IS NULL OR TRIM(summary) = '') 
-          AND content IS NOT NULL 
+        SELECT id, content
+        FROM items
+        WHERE content IS NOT NULL
           AND TRIM(content) != ''
+          AND (
+            summary IS NULL OR TRIM(summary) = ''
+            OR (summary LIKE '%...' AND content IS NOT NULL AND TRIM(content) != '')
+          )
         ORDER BY id ASC;
     """
     with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -70,36 +77,65 @@ def update_article_summaries(conn, updates: list):
 
 
 def process_batch(batch: list, prompt_template: str) -> list:
-    """Formulates the prompt, calls Gemini API, and returns parsed summaries."""
-    # Format input data as a clean JSON list for the model
+    """Formulates the prompt, calls Gemini API, handles rate limits and fallback keys, and returns parsed summaries."""
+    global client, current_key
+    
     formatted_input = [{"id": item["id"], "content": item["content"]} for item in batch]
     formatted_prompt = prompt_template.replace("{articles_json}", json.dumps(formatted_input, indent=2))
-    try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=formatted_prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2, 
-            ),
-        )
-        
-        # Cleaning the output from markdown brakets 
-        response_text = response.text.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text.split("```json", 1)[1]
-        if response_text.endswith("```"):
-            response_text = response_text.rsplit("```", 1)[0]
-        
-        summaries = json.loads(response_text.strip())
-        return summaries if isinstance(summaries, list) else []
-    except json.JSONDecodeError as je:
-        print(f"Failed to parse JSON response from batch: {je}")
-        print(f"Raw response: {response.text}")
-        return []
-    except Exception as e:
-        print(f"API Error processing batch: {e}")
-        return []
+    
+    max_retries = 3
+    retry_delay = 55.0  # Set to match the ~54s cooling period required by the Google Free Tier
+
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=formatted_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2, 
+                ),
+            )
+            
+            # Cleaning the output from markdown blocks
+            response_text = response.text.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text.split("```json", 1)[1]
+            if response_text.endswith("```"):
+                response_text = response_text.rsplit("```", 1)[0]
+            
+            summaries = json.loads(response_text.strip())
+            return summaries if isinstance(summaries, list) else []
+            
+        except json.JSONDecodeError as je:
+            print(f"Failed to parse JSON response from batch: {je}")
+            print(f"Raw response: {response.text}")
+            return []
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                print(f"Rate limit hit on attempt {attempt + 1} of {max_retries}.")
+                
+                # Try swapping to the replacement key first
+                if current_key == api_key_primary and api_key_replacement:
+                    print("Switching to GEMINI_REPLACEMENT_KEY...")
+                    current_key = api_key_replacement
+                    client = genai.Client(api_key=current_key)
+                    continue
+                
+                # If already using the replacement key or no replacement exists, wait and retry
+                if attempt < max_retries - 1:
+                    print(f"Waiting {retry_delay} seconds before retrying...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5
+                else:
+                    print("Max retries exceeded for this batch.")
+            else:
+                print(f"API Error processing batch: {e}")
+                break
+
+    return []
 
 
 def main():
@@ -145,6 +181,10 @@ def main():
                     print("No valid updates found in API response for this batch.")
             else:
                 print("Skipping batch due to an processing error.")
+
+            # Slight delay between standard batches to respect standard API spacing
+            if i + BATCH_SIZE < total_articles:
+                time.sleep(5)
 
         print("Summarization process complete.")
 

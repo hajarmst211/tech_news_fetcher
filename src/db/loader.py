@@ -257,3 +257,23 @@ def insert_hn_seen_ids(hn_ids: list[int]) -> int:
     if inserted:
         print(f"  [DB] Inserted {inserted} new HN IDs")
     return inserted
+
+
+def update_source_metadata(source_id: int, last_fetched_at: str | None, last_fetch_status: str | None, last_status_code: int | None = None) -> None:
+    """Updates status tracking columns on the sources table."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE sources
+                SET last_fetched_at = %s,
+                    last_fetch_status = %s,
+                    last_status_code = %s
+                WHERE id = %s
+                """,
+                (last_fetched_at, last_fetch_status, last_status_code, source_id)
+            )
+        conn.commit()
+    finally:
+        return_conn(conn)

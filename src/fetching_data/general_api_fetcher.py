@@ -1,3 +1,5 @@
+# general_api_fetcher.py
+
 import logging
 import requests
 from typing import Optional, Dict, Any, Union
@@ -20,6 +22,7 @@ class GeneralApiFetcher:
 
         self.session = requests.Session()
         self.session.verify = ssl_verify
+        self.last_status_code = None
 
         default_headers = {
             "User-Agent": "TechNewsPipeline/1.0",
@@ -48,6 +51,8 @@ class GeneralApiFetcher:
         extra_headers: Optional[Dict[str, str]] = None,
     ) -> Optional[requests.Response]:
         url = self._build_url(endpoint)
+        self.last_status_code = None
+        response = None
         try:
             logger.info(f"Sending {method} request to: {url}")
             response = self.session.request(
@@ -58,56 +63,60 @@ class GeneralApiFetcher:
                 headers=extra_headers,
                 timeout=self.timeout,
             )
+            self.last_status_code = response.status_code
             response.raise_for_status()
             logger.info(f"  [OK] {response.status_code} from {method} {url}")
             return response
         except requests.exceptions.HTTPError as http_err:
-            logger.error(f"HTTP error {response.status_code} on {method} {url}: {http_err}")
+            self.last_status_code = response.status_code if response is not None else None
+            logger.error(f"HTTP error {self.last_status_code} on {method} {url}: {http_err}")
         except requests.exceptions.Timeout:
+            self.last_status_code = None
             logger.error(f"Timeout occurred ({self.timeout}s) on {method} {url}")
         except requests.exceptions.RequestException as req_err:
+            self.last_status_code = getattr(getattr(req_err, "response", None), "status_code", None)
             logger.error(f"Network or request error on {method} {url}: {req_err}")
         return None
 
     def request(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        extra_headers: Optional[Dict[str, str]] = None
-    ) -> Optional[Union[Dict[str, Any], list]]:
-        response = self._send(endpoint, method, params, json_data, extra_headers)
-        if response is None:
-            return None
-        try:
-            return response.json()
-        except ValueError as json_err:
-            logger.error(f"Failed to decode JSON from {response.url}: {json_err}")
-            return None
+            self,
+            endpoint: str,
+            method: str = "GET",
+            params: Optional[Dict[str, Any]] = None,
+            json_data: Optional[Dict[str, Any]] = None,
+            extra_headers: Optional[Dict[str, str]] = None
+        ) -> Optional[Union[Dict[str, Any], list]]:
+            response = self._send(endpoint, method, params, json_data, extra_headers)
+            if response is None:
+                return None
+            try:
+                return response.json()
+            except ValueError as json_err:
+                logger.error(f"Failed to decode JSON from {response.url}: {json_err}")
+                return None
 
     def request_raw(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        extra_headers: Optional[Dict[str, str]] = None,
-    ) -> Optional[str]:
-        response = self._send(endpoint, method, params, json_data, extra_headers)
-        if response is None:
-            return None
-        return response.text
+            self,
+            endpoint: str,
+            method: str = "GET",
+            params: Optional[Dict[str, Any]] = None,
+            json_data: Optional[Dict[str, Any]] = None,
+            extra_headers: Optional[Dict[str, str]] = None,
+        ) -> Optional[str]:
+            response = self._send(endpoint, method, params, json_data, extra_headers)
+            if response is None:
+                return None
+            return response.text
 
     def request_response(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        extra_headers: Optional[Dict[str, str]] = None,
-    ) -> Optional[requests.Response]:
-        return self._send(endpoint, method, params, json_data, extra_headers)
+            self,
+            endpoint: str,
+            method: str = "GET",
+            params: Optional[Dict[str, Any]] = None,
+            json_data: Optional[Dict[str, Any]] = None,
+            extra_headers: Optional[Dict[str, str]] = None,
+        ) -> Optional[requests.Response]:
+            return self._send(endpoint, method, params, json_data, extra_headers)
 
     def close(self):
-        self.session.close()
+            self.session.close()

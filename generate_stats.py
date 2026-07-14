@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Generate comprehensive stats.json from the database for the dashboard."""
+#generate_stats.py
 
 import json
 import os
@@ -12,6 +11,8 @@ load_dotenv()
 
 OUTPUT = "stats.json"
 
+EXCLUDED_TYPES = ('nvd', 'github_release')
+
 def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
@@ -21,35 +22,45 @@ def main():
     # ── Sources ──
     cur.execute("""
         SELECT s.name, s.source_type, s.category,
-               COUNT(i.id) AS item_count
+            COUNT(i.id) AS item_count,
+            s.last_fetch_status, s.last_status_code, s.last_fetched_at
         FROM sources s
         LEFT JOIN items i ON i.source_id = s.id
-        GROUP BY s.id, s.name, s.source_type, s.category
+        GROUP BY s.id, s.name, s.source_type, s.category,
+                s.last_fetch_status, s.last_status_code, s.last_fetched_at
         ORDER BY s.name
     """)
+
     sources = []
     total_sources_with_items = 0
     source_type_counts = defaultdict(int)
-    for name, stype, cat, item_count in cur.fetchall():
+    for name, stype, cat, item_count, status, status_code, fetched_at in cur.fetchall():
         sources.append({
             "name": name,
             "type": stype,
             "category": cat,
             "items": item_count,
+            "status": status,
+            "status_code": status_code,
+            "last_fetched_at": fetched_at,
         })
         source_type_counts[stype] += 1
         if item_count > 0:
             total_sources_with_items += 1
 
-    stats["sources"] = {
+        stats["sources"] = {
         "total": len(sources),
         "with_items": total_sources_with_items,
-        "by_type": dict(source_type_counts),
-        "list": sources,
+        "type_counts": dict(source_type_counts),
+        "list": sources  
     }
-
+        
     # ── Item counts ──
-    cur.execute("SELECT COUNT(*) FROM items")
+    cur.execute("""
+        SELECT COUNT(*) FROM items i
+        JOIN sources s ON i.source_id = s.id
+        WHERE s.source_type NOT IN %s
+    """, (EXCLUDED_TYPES,))
     total_items = cur.fetchone()[0]
 
     def safe_count(table):
@@ -75,22 +86,24 @@ def main():
     cur.execute("""
         SELECT
             CASE
-                WHEN summary IS NOT NULL AND TRIM(summary) != ''
-                     AND content IS NOT NULL AND TRIM(content) != ''
+                WHEN i.summary IS NOT NULL AND TRIM(i.summary) != ''
+                     AND i.content IS NOT NULL AND TRIM(i.content) != ''
                     THEN 'summary AND content'
-                WHEN summary IS NOT NULL AND TRIM(summary) != ''
-                     AND (content IS NULL OR TRIM(content) = '')
+                WHEN i.summary IS NOT NULL AND TRIM(i.summary) != ''
+                     AND (i.content IS NULL OR TRIM(i.content) = '')
                     THEN 'summary, no content'
-                WHEN (summary IS NULL OR TRIM(summary) = '')
-                     AND content IS NOT NULL AND TRIM(content) != ''
+                WHEN (i.summary IS NULL OR TRIM(i.summary) = '')
+                     AND i.content IS NOT NULL AND TRIM(i.content) != ''
                     THEN 'no summary, content'
                 ELSE 'no summary, no content'
             END AS bucket,
             COUNT(*) AS cnt
-        FROM items
+        FROM items i
+        JOIN sources s ON i.source_id = s.id
+        WHERE s.source_type NOT IN %s
         GROUP BY bucket
         ORDER BY bucket
-    """)
+    """, (EXCLUDED_TYPES,))
     breakdown = {}
     for bucket, cnt in cur.fetchall():
         breakdown[bucket] = cnt
@@ -101,16 +114,20 @@ def main():
 
     # ── Summarizer candidates (items the summarizer could process) ──
     cur.execute("""
-        SELECT COUNT(*) FROM items
-        WHERE (summary IS NULL OR TRIM(summary) = '')
-          AND content IS NOT NULL AND TRIM(content) != ''
-    """)
+        SELECT COUNT(*) FROM items i
+        JOIN sources s ON i.source_id = s.id
+        WHERE (i.summary IS NULL OR TRIM(i.summary) = '')
+          AND i.content IS NOT NULL AND TRIM(i.content) != ''
+          AND s.source_type NOT IN %s
+    """, (EXCLUDED_TYPES,))
     stats["summarizer_candidates"] = cur.fetchone()[0]
 
     cur.execute("""
-        SELECT COUNT(*) FROM items
-        WHERE summary IS NOT NULL AND TRIM(summary) != ''
-    """)
+        SELECT COUNT(*) FROM items i
+        JOIN sources s ON i.source_id = s.id
+        WHERE i.summary IS NOT NULL AND TRIM(i.summary) != ''
+          AND s.source_type NOT IN %s
+    """, (EXCLUDED_TYPES,))
     stats["items_with_summary"] = cur.fetchone()[0]
 
     # ── Summarizer before/after impact ──
@@ -163,12 +180,14 @@ def main():
 
     # ── Themes ──
     cur.execute("""
-        SELECT theme, COUNT(*) AS cnt
-        FROM items
-        WHERE theme IS NOT NULL AND TRIM(theme) != ''
-        GROUP BY theme
-        ORDER BY cnt DESC, theme
-    """)
+        SELECT i.theme, COUNT(*) AS cnt
+        FROM items i
+        JOIN sources s ON i.source_id = s.id
+        WHERE i.theme IS NOT NULL AND TRIM(i.theme) != ''
+          AND s.source_type NOT IN %s
+        GROUP BY i.theme
+        ORDER BY cnt DESC, i.theme
+    """, (EXCLUDED_TYPES,))
     themes = [{"theme": row[0], "count": row[1]} for row in cur.fetchall()]
     stats["themes"] = {
         "total_distinct": len(themes),
@@ -180,9 +199,10 @@ def main():
         SELECT s.source_type, COUNT(i.id) AS cnt
         FROM sources s
         LEFT JOIN items i ON i.source_id = s.id
+        WHERE s.source_type NOT IN %s
         GROUP BY s.source_type
         ORDER BY cnt DESC
-    """)
+    """, (EXCLUDED_TYPES,))
     stats["items_by_source_type"] = dict(cur.fetchall())
 
     # ── Items per source (top N) ──
@@ -190,10 +210,11 @@ def main():
         SELECT s.name, COUNT(i.id) AS cnt
         FROM sources s
         JOIN items i ON i.source_id = s.id
+        WHERE s.source_type NOT IN %s
         GROUP BY s.name
         ORDER BY cnt DESC
         LIMIT 20
-    """)
+    """, (EXCLUDED_TYPES,))
     stats["top_sources_by_items"] = [{"name": r[0], "count": r[1]} for r in cur.fetchall()]
 
     cur.close()

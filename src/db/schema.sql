@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS sources (
     source_type       TEXT NOT NULL,
     category          TEXT,
     last_fetch_status TEXT,
+    last_status_code INTEGER,
     last_fetched_at   TIMESTAMPTZ
 );
 
@@ -71,3 +72,4 @@ CREATE TABLE IF NOT EXISTS hn_seen_ids (
     hn_id   BIGINT PRIMARY KEY,
     seen_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+---item_data = api.get_item_details(item_id)

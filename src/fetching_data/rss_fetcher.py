@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,12 @@ from db.database import update_source_status
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "sources.yaml"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+db_lock = threading.Lock()
+
+def safe_update_source_status(*args, **kwargs):
+    with db_lock:
+        update_source_status(*args, **kwargs)
 
 
 def load_sources() -> list[dict]:
@@ -91,6 +98,7 @@ def _flatten_reddit_comments(children: list) -> list[dict]:
 
 def fetch_rss_feed(source: dict) -> None:
     name = source["name"]
+    sanitized_name = _sanitize_name(name)
     base_url = source["base_url"]
     endpoint = source["endpoint"]
     headers = source.get("headers", {})
@@ -111,24 +119,22 @@ def fetch_rss_feed(source: dict) -> None:
                     browser = pw.chromium.launch(headless=True)
                     page = browser.new_page()
                     page.goto(base_url + endpoint, wait_until="networkidle", timeout=30000)
-                    #for debugging
-                    page.screenshot(path="debug_screenshot.png") 
                     raw_xml = page.inner_text("pre")
                     browser.close()
             except Exception as e:
                 print(f"  [FAIL] Playwright fallback failed for {name}: {e}")
-                update_source_status(name, "failed")
+                safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
                 return
         else:
             print(f"  [FAIL] {name} — request returned no data")
-            update_source_status(name, "failed")
+            safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
             return
 
     feed = feedparser.parse(raw_xml)
 
     if feed.bozo and not feed.entries:
         print(f"  [FAIL] {name} — feed parse error: {feed.bozo_exception}")
-        update_source_status(name, "failed")
+        safe_update_source_status(sanitized_name, "failed", getattr(fetcher, "last_status_code", None))
         return
 
     print(f"  Found {len(feed.entries)} entries")
@@ -143,7 +149,7 @@ def fetch_rss_feed(source: dict) -> None:
 
     if not feed.entries:
         print(f"  [WARN] {name} — 0 entries (feed may be empty)")
-        update_source_status(name, "success")
+        safe_update_source_status(sanitized_name, "success", getattr(fetcher, "last_status_code", None))
         return
 
     entries_data = [_entry_to_dict(e) for e in feed.entries]
@@ -214,7 +220,7 @@ def fetch_rss_feed(source: dict) -> None:
 
     _save_json(entries_data, name)
     print(f"  [OK]   {name} — {len(feed.entries)} entries saved")
-    update_source_status(name, "success")
+    safe_update_source_status(sanitized_name, "success", getattr(fetcher, "last_status_code", None))
 
 
 def main() -> None:
@@ -241,4 +247,21 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_filepath = log_dir / f"rss_fetcher_{date_str}.log"
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    with open(log_filepath, "a", encoding="utf-8", buffering=1) as log_file:
+        sys.stdout = log_file
+        sys.stderr = log_file
+        try:
+            main()
+        except Exception as e:
+            import traceback
+            traceback.print_exc(file=log_file)
+            raise e
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr

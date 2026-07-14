@@ -5,18 +5,16 @@ CLEAN_DIR = src/cleaning
 
 .PHONY: fetch pipeline articles clean stats all profile visualizeProfile
 
-fetch:
-	$(PYTHON) $(FETCH_DIR)/api_fetchers.py
-	$(PYTHON) $(FETCH_DIR)/rss_fetcher.py
-	$(PYTHON) $(CLEAN_DIR)/general_cleaning.py
-
-pipeline: fetch
-	$(PYTHON) $(FETCH_DIR)/article_content_fetcher.py
-	$(PYTHON) cleaning_stats.py
-
-all: pipeline
+pipeline:
 	$(PYTHON) main.py
 
+stats:
+	$(PYTHON) generate_stats.py
+
+all: pipeline stats
+
+server:
+	$(PYTHON) -m http.server 8000
 
 profile:
 	$(PYTHON) -m cProfile -s tottime -o program.prof main.py

@@ -10,8 +10,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from db.database import init_db, ensure_source, get_conn, return_conn
-from db.loader import insert_items, insert_vulnerabilities, insert_hn_seen_ids, insert_comments
-
+from db.loader import (
+    insert_items, 
+    insert_vulnerabilities, 
+    insert_hn_seen_ids, 
+    insert_comments, 
+    update_source_metadata
+)
 
 
 def normalize_date(date_str: str | None) -> str | None:
@@ -19,13 +24,33 @@ def normalize_date(date_str: str | None) -> str | None:
         return None
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        return dt.isoformat()
+        # Returns only the 'YYYY-MM-DD' portion
+        return dt.date().isoformat()
     except (ValueError, TypeError):
+        if isinstance(date_str, str) and len(date_str) >= 10:
+            if re.match(r'^\d{4}-\d{2}-\d{2}', date_str):
+                return date_str[:10]
         return date_str
 
 
-# html and markdown
-def clean_text(text: str) -> str:
+EMOJI_PATTERN = re.compile(
+    "[\U0001F600-\U0001F64F"  # Emoticons
+    "\U0001F300-\U0001F5FF"  # Misc Symbols and Pictographs
+    "\U0001F680-\U0001F6FF"  # Transport and Map
+    "\U0001F1E0-\U0001F1FF"  # Flags
+    "\U00002702-\U000027B0"  # Dingbats
+    "\U000024C2-\U0001F251"  # Enclosed / Supplement
+    "\U0001F900-\U0001F9FF"  # Supplemental Symbols
+    "\U0001FA00-\U0001FA6F"  # Chess Symbols
+    "\U0001FA70-\U0001FAFF"  # Symbols Extended-A
+    "\U00002600-\U000026FF"  # Misc symbols
+    "\U0000FE00-\U0000FE0F"  # Variation selectors
+    "\U0000200D"             # Zero-width joiner
+    "]+", flags=re.UNICODE
+)
+
+
+def clean_text(text: str, remove_emojis: bool = False) -> str:
     text = html.unescape(text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', r'\1', text)
@@ -39,6 +64,8 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
     text = re.sub(r'_{1,3}([^_]+)_{1,3}', r'\1', text)
     text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    if remove_emojis:
+        text = EMOJI_PATTERN.sub('', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
@@ -49,9 +76,8 @@ def clean_value(value):
     if isinstance(value, list):
         return [clean_value(item) for item in value]
     if isinstance(value, str):
-        return clean_text(value)
+        return clean_text(value, remove_emojis=True)
     return value
-
 
 
 def dedup_records(records: list[dict], key: str = "id") -> list[dict]:
@@ -63,7 +89,6 @@ def dedup_records(records: list[dict], key: str = "id") -> list[dict]:
             seen.add(k)
             result.append(rec)
     return result
-
 
 
 def extract_nvd_fields(cve_item: dict) -> dict:
@@ -93,7 +118,6 @@ def extract_nvd_fields(cve_item: dict) -> dict:
         "cvss_vector": cvss.get("vectorString") if cvss else None,
         "raw": cve_item,
     }
-
 
 
 SOURCE_HANDLERS = {
@@ -165,6 +189,8 @@ def _process_comments_file(stem: str, data: dict, source_type: str) -> None:
         if item_id is None:
             continue
 
+        if isinstance(comments, dict):
+            comments = comments.values()
         for comment in comments:
             if not isinstance(comment, dict):
                 continue
@@ -196,39 +222,79 @@ def clean_file(filepath: Path) -> None:
     print(f"\n  Processing: {filepath.name}")
 
     with open(filepath, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        raw_data = json.load(f)
 
     stem = filepath.stem
     source_type = detect_source_type(stem)
     source_name = stem
     category = extract_category(stem)
 
-    if stem.endswith("_comments"):
-        if isinstance(data, dict):
-            _process_comments_file(stem, data, source_type)
+    fetched_at = None
+    status = None
+    status_code = None
+    records = []
+
+    # Unwrap structured metadata wrappers
+    if isinstance(raw_data, dict):
+        fetched_at = normalize_date(raw_data.get("fetched_at"))
+        status = raw_data.get("status") or raw_data.get("fetch_status")
+        status_code = raw_data.get("status_code") or raw_data.get("last_status_code")
+
+        payload = None
+        for key in ("data", "results", "items", "comments", "articles"):
+            if key in raw_data and isinstance(raw_data[key], (list, dict)):
+                payload = raw_data[key]
+                break
+
+        if payload is not None:
+            records_data = payload
         else:
-            print(f"  [WARN] Expected dict for comments file '{stem}', got {type(data).__name__}")
+            # If there's no metadata key signature, consider the dictionary itself a single item
+            if not any(k in raw_data for k in ("fetched_at", "status", "status_code")):
+                records_data = raw_data
+            else:
+                records_data = []
+    else:
+        records_data = raw_data
+
+    # Comment sub-processing
+    if stem.endswith("_comments"):
+        if isinstance(records_data, dict):
+            _process_comments_file(stem, records_data, source_type)
+            if fetched_at or status or status_code:
+                comment_source_id = ensure_source(stem, source_type, category)
+                update_source_metadata(comment_source_id, fetched_at, status, status_code)
+        else:
+            print(f"  [WARN] Expected dict format for comments in '{stem}', got {type(records_data).__name__}")
         return
 
+    # Base item sources processing
     source_id = ensure_source(source_name, source_type, category)
 
-    if source_type == "nvd" and isinstance(data, list):
-        records = [clean_record(rec, "nvd") for rec in data]
+    if fetched_at or status or status_code:
+        update_source_metadata(source_id, fetched_at, status, status_code)
+
+    if not records_data:
+        print(f"  [INFO] No records found inside '{stem}' payload")
+        return
+
+    if source_type == "nvd" and isinstance(records_data, list):
+        records = [clean_record(rec, "nvd") for rec in records_data]
         records = dedup_records(records, key="cve_id")
         insert_vulnerabilities(source_id, records)
 
-    elif source_type == "hn" and "new_stories" in stem.lower() and isinstance(data, list):
-        hn_ids = [int(x) for x in data if isinstance(x, (int, float, str)) and str(x).isdigit()]
+    elif source_type == "hn" and "new_stories" in stem.lower() and isinstance(records_data, list):
+        hn_ids = [int(x) for x in records_data if isinstance(x, (int, float, str)) and str(x).isdigit()]
         if hn_ids:
             insert_hn_seen_ids(hn_ids)
 
-    elif isinstance(data, list):
-        records = [clean_record(rec) for rec in data]
+    elif isinstance(records_data, list):
+        records = [clean_record(rec) for rec in records_data]
         records = dedup_records(records, key="id")
         insert_items(source_id, records, source_type)
 
-    elif isinstance(data, dict):
-        record = clean_record(data, source_type)
+    elif isinstance(records_data, dict):
+        record = clean_record(records_data, source_type)
         if source_type == "nvd":
             insert_vulnerabilities(source_id, [record])
         else:
