@@ -24,7 +24,7 @@
 
     Redundancy Penalty (RPM): Fixed at 0.2
 
-### Best Configuration (Trial 35 out of 79 (forced stop))
+### Best Configuration (Trial 35 out of 80 (forced stop))
 Parameter Characteristics:
 
     Population Size (Pop Size): 25
@@ -45,6 +45,20 @@ Resulting Metrics:
 
     Mean Std (Multi-Seed): 0.1985
 
-    Mean MCBA (Multi-Seed): 0.2227
+    Mean MCBA (Multi-Seed): **0.2227**
 
     Mean RPM (Multi-Seed): 0.2485
+
+### observations:
+| Metric / Parameter | Trial 35 (Best: 0.2232) | Trial 17 (2nd: 0.2227) | Trial 32 (3rd: 0.2221) | Common Trend |
+| :--- | :---: | :---: | :---: | :--- |
+| **Pop Size** | 25 | 25 | 25 | Consistently at the maximum limit of 25. |
+| **P Crossover** | 0.800 | 0.700 | 0.800 | Favors higher rates (0.700 to 0.800). |
+| **P Mutation** | 0.070 | 0.090 | 0.070 | Tends to favor lower rates (0.070 to 0.090). |
+| **W Coverage** | 0.55 | 0.55 | 0.45 | Stronger performance around 0.55. |
+| **W Pos MCBA** | 0.80 | 0.50 | 0.50 | Variable, but higher values seem viable. |
+| **Penalty Weight** | 1.10 | 0.60 | 1.10 | Performs well at mid-to-high values (0.60 to 1.10). |
+
+# technique i+1:
+- Elitism 
+- Tournament Selection: We replace standard selection with a tournament selection strategy.

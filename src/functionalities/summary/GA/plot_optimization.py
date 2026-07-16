@@ -1,5 +1,4 @@
 import os
-import re
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -48,42 +47,28 @@ def plot_optimization(data):
         ("w_position_mcba", "W Pos MCBA"),
         ("penalty_weight", "Penalty Weight"),
     ]
-    scores = [
-        ("mean_std", "Mean Std (Multi-Seed)"),
-        ("mean_mcba", "Mean MCBA (Multi-Seed)"),
-        ("mean_rpm", "Mean RPM (Multi-Seed)"),
-        ("overall_mean", "Overall Mean"),
-    ]
+    score_key = "overall_mean"
+    score_label = "Overall Mean F1"
 
-    fig, axes = plt.subplots(len(hyperparams), len(scores), figsize=(20, 24))
-    fig.suptitle("Optuna Hyperparameter Optimization Results", fontsize=16, y=0.98)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle("Overall Mean Score by Hyperparameter", fontsize=14)
 
-    for row, (hp_key, hp_label) in enumerate(hyperparams):
-        for col, (sc_key, sc_label) in enumerate(scores):
-            ax = axes[row][col]
-            hp_vals = [d[hp_key] for d in data]
-            sc_vals = [d[sc_key] for d in data]
+    for idx, (hp_key, hp_label) in enumerate(hyperparams):
+        ax = axes[idx // 3][idx % 3]
+        hp_vals = [d[hp_key] for d in data]
+        sc_vals = [d[score_key] for d in data]
 
-            ax.scatter(hp_vals, sc_vals, alpha=0.6, edgecolors="k", linewidths=0.5, s=40)
+        # Group by unique hp values and compute mean score
+        unique_vals = sorted(set(hp_vals))
+        means = [np.mean([sc_vals[i] for i in range(len(hp_vals)) if hp_vals[i] == v]) for v in unique_vals]
 
-            # Trend line
-            if len(set(hp_vals)) > 1:
-                z = np.polyfit(hp_vals, sc_vals, 1)
-                p = np.poly1d(z)
-                x_line = np.linspace(min(hp_vals), max(hp_vals), 100)
-                ax.plot(x_line, p(x_line), "r--", alpha=0.7, linewidth=1.5)
+        ax.bar([str(v) for v in unique_vals], means, color="steelblue", edgecolor="black")
+        ax.set_title(hp_label)
+        ax.set_xlabel(hp_label)
+        ax.set_ylabel(score_label)
+        ax.tick_params(axis="x", rotation=45)
 
-            if col == 0:
-                ax.set_ylabel(hp_label, fontsize=10)
-            else:
-                ax.set_ylabel("")
-            if row == len(hyperparams) - 1:
-                ax.set_xlabel(sc_label, fontsize=9)
-            else:
-                ax.set_xlabel("")
-            ax.tick_params(axis="both", labelsize=8)
-
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(OUTPUT_PNG, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Plot saved to: {OUTPUT_PNG}")
