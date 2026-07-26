@@ -1,3 +1,5 @@
+import os
+import sys
 import numpy as np
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
@@ -6,6 +8,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import collections
 import pandas as pd
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from data_loader import load_parquet_data
 
 # Download required NLTK resources
 nltk.download('punkt', quiet=True)
@@ -272,19 +277,8 @@ def compute_f1_score(candidate_summary, reference_summary):
 
 
 if __name__ == "__main__":
-    import os
-    print("importing dataset")
-    local_path = "train-00000-of-00015.parquet"
-    if not os.path.exists(local_path):
-        url = "https://huggingface.co/datasets/ccdv/arxiv-summarization/resolve/main/document/train-00000-of-00015.parquet"
-        df = pd.read_parquet(url, columns=["document", "abstract"])
-        df.to_parquet(local_path)
-    else:
-        df = pd.read_parquet(local_path)
-    
-    print("df found")
-
-    ds = df.head(100).to_dict(orient="records")
+    df = load_parquet_data()
+    ds = df.iloc[1000:1005].to_dict(orient="records")
 
     print("=== STARTING SUMMARY EVALUATION ===")
     # Configurable limits

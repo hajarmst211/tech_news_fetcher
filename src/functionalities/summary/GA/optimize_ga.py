@@ -1,12 +1,35 @@
 import os
+import sys
 import random
+import itertools
 import numpy as np
 import pandas as pd
-import optuna
 import concurrent.futures
 from nltk.tokenize import sent_tokenize
 from sklearn.metrics.pairwise import cosine_similarity
 from ga_summarizer import SummarizationPipeline, compute_f1_score
+
+# Import scikit-optimize components
+from skopt import gp_minimize
+from skopt.space import Categorical
+from skopt.utils import use_named_args
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from data_loader import load_parquet_data
+
+# Define the search space using scikit-optimize Categorical dimensions
+search_space = [
+    Categorical([25, 35, 45, 55], name="pop_size"),
+    Categorical([0.50, 0.65, 0.80], name="w_coverage"),
+    Categorical([0.8], name="penalty_weight"),
+    Categorical([0.70, 0.80, 0.90], name="p_crossover"),
+    Categorical([0.01, 0.05, 0.2], name="p_mutation"),
+    Categorical([0.40, 0.65, 0.90], name="w_position_mcba"),
+]
+
+# Track trial index and best running score globally
+trial_counter = 0
+best_overall_mean_yet = -float('inf')
 
 def set_seed(seed):
     """Utility to set random states for stochastic reproducibility."""
@@ -24,7 +47,7 @@ class CustomGeneticAlgorithm:
         self.tournament_size = tournament_size
 
     def run(self, fitness_fn):
-        # 2. Fitness Caching (Memoization)
+        # Fitness Caching (Memoization)
         fitness_cache = {}
         def get_fitness(chrom):
             chrom_tuple = tuple(chrom)
@@ -50,7 +73,7 @@ class CustomGeneticAlgorithm:
         best_fit = -float('inf')
 
         for gen in range(self.generations):
-            # 3. Adaptive Mutation: Decay mutation rate linearly over generations
+            # Adaptive Mutation: Decay mutation rate linearly over generations
             current_p_mutation = self.initial_p_mutation * (1.0 - (gen / self.generations))
             current_p_mutation = max(current_p_mutation, 0.01)
 
@@ -63,14 +86,14 @@ class CustomGeneticAlgorithm:
                 best_fit = fitnesses[gen_best_idx]
                 best_chrom = population[gen_best_idx].copy()
 
-            # 1. Elitism: Preserve the best individuals
+            # Elitism: Preserve the best individuals
             num_elites = max(1, int(self.pop_size * self.elitism_ratio))
             elite_indices = np.argsort(fitnesses)[-num_elites:]
             elites = population[elite_indices].copy()
 
             next_pop = []
             for _ in range(self.pop_size - num_elites):
-                # 3. Tournament Selection
+                # Tournament Selection
                 t_indices_1 = np.random.choice(self.pop_size, self.tournament_size, replace=False)
                 parent1 = population[t_indices_1[np.argmax(fitnesses[t_indices_1])]]
                 
@@ -94,7 +117,7 @@ class CustomGeneticAlgorithm:
 
             population = np.vstack([elites, np.array(next_pop)])
 
-        # 4. Local Search (Hill Climbing / Memetic step on the final best chromosome)
+        # Local Search (Hill Climbing / Memetic step on the final best chromosome)
         local_best_chrom = best_chrom.copy()
         local_best_fit = best_fit
         for idx in range(self.num_sentences):
@@ -124,7 +147,7 @@ class OptimizedSummarizationPipeline(SummarizationPipeline):
         self.p_crossover = kwargs.get("p_crossover", 0.8)
         self.p_mutation = kwargs.get("p_mutation", 0.05)
 
-        # 2. Precomputation of similarities to avoid runtime matrix operations
+        # Precomputation of similarities to avoid runtime matrix operations
         if self.tfidf_matrix is not None and self.doc_vector is not None:
             self.sentence_doc_similarities = cosine_similarity(self.tfidf_matrix, self.doc_vector).flatten()
             self.pairwise_similarities = cosine_similarity(self.tfidf_matrix)
@@ -269,14 +292,19 @@ def run_single_evaluation_task(args):
     return doc_idx, seed, f1_std, f1_mcba, f1_rpm
 
 
-def objective(trial):
+# Use the scikit-optimize decorator to bind categorical inputs to parameter names
+@use_named_args(search_space)
+def objective(pop_size, w_coverage, penalty_weight, p_crossover, p_mutation, w_position_mcba):
+    global trial_counter, best_overall_mean_yet
+
+    # Ensure consistent typing for downstream calculations
     params = {
-        "pop_size": trial.suggest_categorical("pop_size", [15, 20, 25]),
-        "w_coverage": trial.suggest_float("w_coverage", 0.45, 0.55, step=0.05),
-        "penalty_weight": trial.suggest_float("penalty_weight", 0.10, 1.10, step=0.50),
-        "p_crossover": trial.suggest_float("p_crossover", 0.60, 0.80, step=0.10),
-        "p_mutation": trial.suggest_float("p_mutation", 0.07, 0.11, step=0.02),
-        "w_position_mcba": trial.suggest_float("w_position_mcba", 0.50, 0.80, step=0.15),
+        "pop_size": int(pop_size),
+        "w_coverage": float(w_coverage),
+        "penalty_weight": float(penalty_weight),
+        "p_crossover": float(p_crossover),
+        "p_mutation": float(p_mutation),
+        "w_position_mcba": float(w_position_mcba),
     }
 
     seeds = [42, 100, 2023]
@@ -291,9 +319,9 @@ def objective(trial):
     f1_mcbas = []
     f1_rpms = []
     
-    print(f"\n--- Starting Trial {trial.number} ---")
+    print(f"\n--- Starting Trial {trial_counter} ---")
     
-    # 4. Parallelization: Run document evaluations across multiple cores
+    # Parallelization: Run document evaluations across multiple cores
     with concurrent.futures.ProcessPoolExecutor() as executor:
         results = list(executor.map(run_single_evaluation_task, tasks))
 
@@ -309,67 +337,85 @@ def objective(trial):
     mean_rpm = np.mean(f1_rpms) if f1_rpms else 0.0
     overall_mean = (mean_std + mean_mcba + mean_rpm) / 3.0
 
+    # Update global tracker for best overall mean
+    if overall_mean > best_overall_mean_yet:
+        best_overall_mean_yet = overall_mean
+
+    # Print local and running optimal metrics to console
+    print(f"Trial {trial_counter} Completed.")
+    print(f"Current Trial Score: {overall_mean:.4f}")
+    print(f"Best Score Yet:      {best_overall_mean_yet:.4f}")
+
+    # Append to log file containing the parameters, specific scores, overall mean, and best overall mean yet
     with open(md_file, "a") as f:
         f.write(
-            f"| {trial.number} | {params['pop_size']} | {params['p_crossover']:.3f} | {params['p_mutation']:.3f} | "
+            f"| {trial_counter} | {params['pop_size']} | {params['p_crossover']:.3f} | {params['p_mutation']:.3f} | "
             f"{params['w_coverage']:.2f} | {params['w_position_mcba']:.2f} | {params['penalty_weight']:.2f} | "
-            f"{mean_std:.4f} | {mean_mcba:.4f} | {mean_rpm:.4f} | {overall_mean:.4f} |\n"
+            f"{mean_std:.4f} | {mean_mcba:.4f} | {mean_rpm:.4f} | {overall_mean:.4f} | {best_overall_mean_yet:.4f} |\n"
         )
 
-    return overall_mean
+    trial_counter += 1
+
+    # gp_minimize always minimizes; return negative overall mean to achieve maximization
+    return -overall_mean
 
 
 if __name__ == "__main__":
-    import urllib.request
-
-    local_path = "train-00000-of-00015.parquet"
-    if not os.path.exists(local_path):
-        url = "https://huggingface.co/datasets/ccdv/arxiv-summarization/resolve/main/document/train-00000-of-00015.parquet"
-        print("Local file not found. Starting dataset download...")
-        urllib.request.urlretrieve(url, local_path)
-        print("\nDownload finished.")
-
-    print("Loading data from local storage...")
-    df = pd.read_parquet(local_path, columns=["article", "abstract"])
-    df = df.rename(columns={"article": "document"})
-    
-    global ds_val, md_file
+    df = load_parquet_data()
+    global ds_val
     ds_val = df.iloc[1000:1005].to_dict(orient="records")
+
     md_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "optimisation_output.md")
 
+    # Write Markdown file header with a Best Yet column
     with open(md_file, "w") as f:
         f.write(
-            "| Trial | Pop Size | P Crossover | P Mutation | W Coverage | W Pos MCBA | Penalty Weight | Mean Std (Multi-Seed) | Mean MCBA (Multi-Seed) | Mean RPM (Multi-Seed) | Overall Mean |\n"
+            "| Trial | Pop Size | P Crossover | P Mutation | W Coverage | W Pos MCBA | Penalty Weight | Mean Std (Multi-Seed) | Mean MCBA (Multi-Seed) | Mean RPM (Multi-Seed) | Overall Mean | Best Yet |\n"
         )
         f.write(
-            "|---|---|---|---|---|---|---|---|---|---|---|\n"
+            "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
         )
 
-    search_space = {
-        "pop_size": [15, 20, 25],
-        "w_coverage": [0.45, 0.50, 0.55],
-        "penalty_weight": [0.1, 0.6, 1.1],
-        "p_crossover": [0.60, 0.70, 0.80],
-        "p_mutation": [0.07, 0.09, 0.11],
-        "w_position_mcba": [0.50, 0.65, 0.80],
+    # Reconstruct dictionary to calculate the grid bounds and initial exhaustiveness
+    raw_search_space = {
+        "pop_size": [25, 35, 45, 55],
+        "w_coverage": [0.50, 0.65, 0.80],
+        "penalty_weight": [0.8],
+        "p_crossover": [0.70, 0.80, 0.90],
+        "p_mutation": [0.01, 0.05, 0.2],
+        "w_position_mcba": [0.40, 0.65, 0.90],
     }
 
-    total_combinations = np.prod([len(v) for v in search_space.values()])
-    print(f"\nInitialized Narrow Grid Search Space with {total_combinations} total combinations.")
+    # Generate all combinations in the exact order of elements in search_space
+    x0 = [list(comb) for comb in itertools.product(
+        raw_search_space["pop_size"],
+        raw_search_space["w_coverage"],
+        raw_search_space["penalty_weight"],
+        raw_search_space["p_crossover"],
+        raw_search_space["p_mutation"],
+        raw_search_space["w_position_mcba"]
+    )]
+    total_combinations = len(x0)
+
+    print(f"\nInitialized Grid Search Space with {total_combinations} total combinations using scikit-optimize.")
     print("Each combination will be evaluated across 5 documents and 3 random seeds.")
     print("Press Ctrl+C to stop the process early. Outcomes are appended progressively to optimisation_output.md.\n")
 
-    study = optuna.create_study(
-        sampler=optuna.samplers.GridSampler(search_space), 
-        direction="maximize"
+    # Run Gaussian Process minimization over the explicit coordinates of the complete grid space
+    res = gp_minimize(
+        objective,
+        search_space,
+        x0=x0,
+        n_calls=total_combinations,
+        n_initial_points=0,
+        random_state=42
     )
-    
-    study.optimize(objective, n_trials=500)
 
     print("\n" + "="*50)
-    print("NARROW GRID SEARCH COMPLETED")
+    print("GRID SEARCH COMPLETED USING SCIKIT-OPTIMIZE")
     print("="*50)
     print("Best parameters found:")
-    for param, value in study.best_params.items():
-        print(f"  {param}: {value}")
-    print(f"Best multi-seed overall mean F1 score: {study.best_value:.4f}")
+    param_names = ["pop_size", "w_coverage", "penalty_weight", "p_crossover", "p_mutation", "w_position_mcba"]
+    for name, val in zip(param_names, res.x):
+        print(f"  {name}: {val}")
+    print(f"Best multi-seed overall mean F1 score: {-res.fun:.4f}")

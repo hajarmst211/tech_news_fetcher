@@ -1,0 +1,78 @@
+# optimization results discussion:
+### Evaluated Hyperparameters
+*   `similarity_threshold`: WordNet path similarity score used as the cutoff threshold for merging candidate concept nodes.
+*   `top_n_fallback`: Quantity of central nodes output when SVO construction rules yield highly sparse sub-graphs.
+*   `prune_percentile`: Percentile rank threshold below which lower-scoring concept nodes are removed prior to reduction.
+
+
+## grid search:
+    similarity_thresholds = [0.4, 0.6, 0.8]
+    top_n_fallbacks = [3, 5, 7]
+    prune_percentiles = [0.0, 15.0, 30.0]
+
+## observations:
+* across all 27 configurations these values stay fixed: 
+
+    - Coherence Score remains constant at 0.1701
+    - Synonym Frequency Score remains constant at 12.2956
+    - Composite Performance remains constant at 0.3090 
+
+--> trying to explore another range
+
+---
+### new grid
+```py
+    similarity_thresholds = expand_parameter_space([0.0, 0.5, 1.0])
+    top_n_fallbacks = expand_parameter_space([1, 10, 20])
+    prune_percentiles = expand_parameter_space([15.0, 30.0, 60.0])
+```
+
+### results:
+## Optimal Configuration Found
+*   **Best Score:** `0.8487`
+*   **Similarity Threshold:** `0.125`
+*   **Fallback Limit:** `1`
+*   **Prune Percentile:** `45.0%`
+*   **Average Sentence Coherence Score:** `1.0000`
+*   **Average Synonym Frequency Score:** `21.3941`
+*   **Composite Benchmark Score:** `0.8487`
+
+
+### observations:
+#### similarity threshold:
+- Once the threshold reaches 0.25 or higher, performance degrades sharply (dropping to ≤0.3601)
+- at 0, the performace remains hight but decreases a bit
+- the optimal value stays: 0.125
+--> explore closer values to 0.125
+
+#### Prune percentile:
+
+*   There is a highly critical transition zone between `37.5%` and `45.0%` pruning. 
+*   At `37.5%` and below, the Coherence Score is low ($0.2586$). 
+*   At `45.0%` and `52.5%`, the Coherence Score jumps to a perfect `1.0000`, which drives the high composite performance.
+*   This suggests that a minimum pruning threshold of approximately $40\%$ is required to eliminate noisy graph edges and resolve coherence issues, but we do not yet know the upper bound where over-pruning begins to degrade quality.
+
+##### Fallback Limit (Low Sensitivity):
+*   For the top-performing trials , varying the Fallback Limit from `1` to `17.5` yielded identical results ($0.8487$). 
+*   This flat response indicates that when the Similarity Threshold is set to `0.125` and pruning is sufficient, the fallback mechanism is either rarely triggered or its limit does not impact the final structural coherence.
+
+---
+# scond try:
+
+### grid_search:
+```py
+    similarity_thresholds = expand_parameter_space([0.05, 0.9, 0.20])
+    top_n_fallbacks = expand_parameter_space([1, 2, 5])
+    prune_percentiles = expand_parameter_space([35.0, 44.0, 52.0])
+```
+### results
+*   **Best Score:** `0.8487`
+*   **Similarity Threshold:** `0.125`
+*   **Fallback Limit:** `1`
+*   **Prune Percentile:** `39.5%`
+*   **Average Sentence Coherence Score:** `1.0000`
+*   **Average Synonym Frequency Score:** `21.3941`
+*   **Composite Benchmark Score:** `0.8487`
+
+
+![alt text](image.png)

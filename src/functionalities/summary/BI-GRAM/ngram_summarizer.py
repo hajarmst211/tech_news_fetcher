@@ -1,6 +1,6 @@
 import os
+import sys
 import re
-import urllib.request
 from collections import Counter
 import nltk
 import numpy as np
@@ -9,24 +9,12 @@ from rouge_score import rouge_scorer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from data_loader import load_parquet_data
+
 # Download NLTK resources
 nltk.download("punkt", quiet=True)
 from nltk.tokenize import sent_tokenize, word_tokenize
-
-
-def download_and_load_data():
-    """Downloads and loads the specified arXiv dataset partition."""
-    local_path = "train-00000-of-00015.parquet"
-    if not os.path.exists(local_path):
-        url = "https://huggingface.co/datasets/ccdv/arxiv-summarization/resolve/main/document/train-00000-of-00015.parquet"
-        print("Local file not found. Starting dataset download...")
-        urllib.request.urlretrieve(url, local_path)
-        print("\nDownload finished.")
-
-    print("Loading data from local storage...")
-    df = pd.read_parquet(local_path, columns=["article", "abstract"])
-    df = df.rename(columns={"article": "document"})
-    return df
 
 
 def clean_and_tokenize_words(text):
@@ -35,37 +23,39 @@ def clean_and_tokenize_words(text):
     return [word for word in tokens if re.match(r"^[a-z]+$", word)]
 
 
-def get_bigrams(words):
-    """Generates a list of bigrams from a list of words."""
-    return [(words[i], words[i + 1]) for i in range(len(words) - 1)]
+def get_ngrams(words, n):
+    """Generates a list of n-grams from a list of words."""
+    if len(words) < n:
+        return []
+    return [tuple(words[i : i + n]) for i in range(len(words) - n + 1)]
 
 
-def bigram_frequency_summarizer(document, num_sentences=3):
-    """Summarizes a document by scoring sentences based on document-wide bigram frequencies."""
+def ngram_frequency_summarizer(document, n=2, num_sentences=3):
+    """Summarizes a document by scoring sentences based on document-wide n-gram frequencies."""
     sentences = sent_tokenize(document)
     if len(sentences) <= num_sentences:
         return document
 
     doc_words = clean_and_tokenize_words(document)
-    doc_bigrams = get_bigrams(doc_words)
-    bigram_counts = Counter(doc_bigrams)
+    doc_ngrams = get_ngrams(doc_words, n)
+    ngram_counts = Counter(doc_ngrams)
 
-    if not bigram_counts:
+    if not ngram_counts:
         return " ".join(sentences[:num_sentences])
 
-    total_bigrams = sum(bigram_counts.values())
-    bigram_probs = {bg: count / total_bigrams for bg, count in bigram_counts.items()}
+    total_ngrams = sum(ngram_counts.values())
+    ngram_probs = {ng: count / total_ngrams for ng, count in ngram_counts.items()}
 
     sentence_scores = []
     for idx, sent in enumerate(sentences):
         sent_words = clean_and_tokenize_words(sent)
-        sent_bigrams = get_bigrams(sent_words)
+        sent_ngrams = get_ngrams(sent_words, n)
 
-        if len(sent_bigrams) == 0:
+        if len(sent_ngrams) == 0:
             score = 0.0
         else:
-            total_score = sum(bigram_probs.get(bg, 0.0) for bg in sent_bigrams)
-            score = total_score / len(sent_bigrams)
+            total_score = sum(ngram_probs.get(ng, 0.0) for ng in sent_ngrams)
+            score = total_score / len(sent_ngrams)
 
         sentence_scores.append((idx, score))
 
@@ -78,10 +68,7 @@ def bigram_frequency_summarizer(document, num_sentences=3):
     return " ".join(summary_sentences)
 
 
-# ==========================================
-# Evaluation Functions
-# ==========================================
-
+# Evaluation 
 
 def calculate_cosine_similarity(text1, text2):
     """Calculates TF-IDF cosine similarity between two texts."""
@@ -97,9 +84,8 @@ def calculate_cosine_similarity(text1, text2):
         return 0.0
 
 
-def evaluate_summaries(df_sample, num_sentences=4):
-    """Generates summaries and evaluates them against reference abstracts."""
-    # Initialize ROUGE Scorer
+def evaluate_summaries(df_sample, n=2, num_sentences=4):
+    """Generates summaries and evaluates them against reference abstracts using n-grams."""
     scorer = rouge_scorer.RougeScorer(
         ["rouge1", "rouge2", "rougeL"], use_stemmer=True
     )
@@ -108,27 +94,24 @@ def evaluate_summaries(df_sample, num_sentences=4):
     cosine_scores = []
 
     print(
-        f"\nStarting evaluation over {len(df_sample)} documents (extracting {num_sentences} sentences per summary)..."
+        f"\nStarting evaluation over {len(df_sample)} documents (extracting {num_sentences} sentences per summary, using n={n})..."
     )
 
     for idx, row in df_sample.iterrows():
         doc = row["document"]
         ref = row["abstract"]
 
-        # Generate summary
-        gen_sum = bigram_frequency_summarizer(doc, num_sentences=num_sentences)
+        # Generate summary using the configured n-gram setting
+        gen_sum = ngram_frequency_summarizer(doc, n=n, num_sentences=num_sentences)
 
-        # Calculate ROUGE
         scores = scorer.score(ref, gen_sum)
         r1_scores.append(scores["rouge1"].fmeasure)
         r2_scores.append(scores["rouge2"].fmeasure)
         rl_scores.append(scores["rougeL"].fmeasure)
 
-        # Calculate Cosine Similarity
         cos_sim = calculate_cosine_similarity(gen_sum, ref)
         cosine_scores.append(cos_sim)
 
-    # Compile average metrics
     metrics = {
         "Mean ROUGE-1 (F1)": np.mean(r1_scores),
         "Mean ROUGE-2 (F1)": np.mean(r2_scores),
@@ -139,21 +122,19 @@ def evaluate_summaries(df_sample, num_sentences=4):
     return metrics
 
 
-# ==========================================
-# Execution
-# ==========================================
 if __name__ == "__main__":
-    df = download_and_load_data()
+    df = load_parquet_data()
 
     # Evaluate on a sample batch (e.g., first 10 documents for quick computation)
     batch_size = 10
     sample_df = df.head(batch_size)
 
-    # Perform evaluation
-    results = evaluate_summaries(sample_df, num_sentences=4)
+    # Perform evaluation with a chosen value of n (e.g., n=2 for bigrams, n=3 for trigrams)
+    chosen_n = 2
+    results = evaluate_summaries(sample_df, n=chosen_n, num_sentences=4)
 
     # Output Results
-    print("\n================ Evaluation Results ================")
+    print(f"\n================ Evaluation Results (n={chosen_n}) ================")
     for metric, score in results.items():
         print(f"{metric:<25}: {score:.4f}")
     print("====================================================")
