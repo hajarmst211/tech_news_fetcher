@@ -8,7 +8,6 @@ program.prof
 *__init__.py
 *.json
 notes/
-logs/
 *.log
 *.parquet
 *.md
