@@ -67,7 +67,7 @@ def main():
     text_column = next((col for col in df.columns if col.lower() in ['text', 'content', 'body']), df.columns[0])
     
     logging.info("Selecting documents from dataset")
-    raw_texts = df[text_column].dropna().head(10).tolist()
+    raw_texts = df[text_column].dropna().tolist()
     
     processed_tokens = preprocess_text(raw_texts)
     ngram_tokens = build_ngrams(processed_tokens)
