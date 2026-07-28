@@ -1,16 +1,19 @@
-import ast
 import os
-import re
 import sys
 import pandas as pd
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
-from nltk.stem import WordNetLemmatizer, PorterStemmer
+from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords, wordnet
+from sentence_transformers import SentenceTransformer, util
+import torch
+from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from data_loader import load_parquet_data
+from data_loader import load_parquet_data, load_data
+
+DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'cs_papers_api.csv')
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -33,6 +36,9 @@ try:
 except LookupError:
     nltk.download('stopwords', quiet=True)
 
+print("Loading sentence-transformer model...")
+similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+
 def is_valid_pos(tag):
     return tag in ['NN', 'NNS', 'NNP', 'NNPS', 'JJ', 'JJR', 'JJS']
 
@@ -48,7 +54,6 @@ def penn_to_wn(tag):
     return None
 
 lemmatizer = WordNetLemmatizer()
-stemmer = PorterStemmer()
 stop_words = set(stopwords.words('english'))
 
 def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4, max_iterations=50, max_phrase_length=3):
@@ -136,36 +141,31 @@ def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4
     sorted_candidates = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)
     return sorted_candidates[0][0]
 
-def stem_phrase(phrase):
-    return set(stemmer.stem(w) for w in phrase.lower().strip().split() if w.strip())
 
-def soft_match(predicted, ground_truth, jaccard_threshold=0.3):
-    pred_tokens = stem_phrase(predicted)
-    gt_tokens = stem_phrase(ground_truth)
-    if not pred_tokens or not gt_tokens:
-        return False
-    intersection = pred_tokens & gt_tokens
-    union = pred_tokens | gt_tokens
-    similarity = len(intersection) / len(union) if union else 0.0
-    return similarity >= jaccard_threshold
-
-def save_to_markdown(window_size, d, threshold, max_iter, avg_p, avg_r, avg_f1, doc_details):
+def save_to_markdown(window_size, d, threshold, max_iter, sim_threshold, avg_p, avg_r, avg_f1, avg_similarity, doc_details):
     filepath = os.path.join(os.path.dirname(__file__), 'textrank_results.md')
     
-    header = f"\n## Configuration: Window={window_size}, d={d}, Threshold={threshold}, MaxIter={max_iter}\n\n"
+    header = (
+        f"\n## Configuration: Window={window_size}, d={d}, Threshold={threshold}, "
+        f"MaxIter={max_iter}, Semantic Match Threshold={sim_threshold}\n\n"
+    )
     
-    table_details = "| Document Index | Actual Label (Dataset) | Predicted Topic (Model) | Match? |\n| --- | --- | --- | --- |\n"
-    for idx, actual, predicted, match in doc_details:
+    table_details = (
+        "| Document Index | Actual Label (Dataset) | Predicted Topic (Model) | Semantic Similarity | Match? |\n"
+        "| --- | --- | --- | --- | --- |\n"
+    )
+    for idx, actual, predicted, score, match in doc_details:
         match_str = "Yes" if match else "No"
-        table_details += f"| {idx} | {actual} | {predicted} | {match_str} |\n"
+        table_details += f"| {idx} | {actual} | {predicted} | {score:.4f} | {match_str} |\n"
         
     metrics_summary = (
         f"\n### Performance Metrics\n"
         f"| Metric | Value |\n"
         f"| --- | --- |\n"
-        f"| Average Precision | {avg_p:.4f} |\n"
-        f"| Average Recall | {avg_r:.4f} |\n"
-        f"| Average F1-Measure | {avg_f1:.4f} |\n"
+        f"| Average Semantic Similarity | {avg_similarity:.4f} |\n"
+        f"| Average Precision (on threshold) | {avg_p:.4f} |\n"
+        f"| Average Recall (on threshold) | {avg_r:.4f} |\n"
+        f"| Average F1-Measure (on threshold) | {avg_f1:.4f} |\n"
     )
 
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -173,8 +173,10 @@ def save_to_markdown(window_size, d, threshold, max_iter, avg_p, avg_r, avg_f1, 
         f.write(table_details)
         f.write(metrics_summary)
 
+
 def main():
-    df = load_parquet_data()
+    print("Loading data...")
+    df = load_data(DATA_PATH)
     text_col = 'text' if 'text' in df.columns else df.columns[0]
     label_col = 'label' if 'label' in df.columns else df.columns[1]
 
@@ -184,16 +186,16 @@ def main():
     d = 0.85
     threshold = 1e-4
     max_iter = 50
+    semantic_match_threshold = 0.45
 
-    total_hits = 0
-    total_extracted = 0
-    total_gt = 0
-    doc_details = []
+    predicted_topics = []
+    actual_labels = []
 
-    for idx, row in df.iterrows():
+    print(f"Extracting topics from {len(df)} documents...")
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="TextRank Extraction"):
         text = row[text_col]
         actual_label = str(row[label_col]).strip()
-
+        
         predicted_topic = extract_single_topic(
             text,
             window_size=window_size,
@@ -201,20 +203,58 @@ def main():
             convergence_threshold=threshold,
             max_iterations=max_iter
         )
+        predicted_topics.append(predicted_topic)
+        actual_labels.append(actual_label)
 
-        is_match = soft_match(predicted_topic, actual_label)
-        doc_details.append((idx, actual_label, predicted_topic, is_match))
+    print("Encoding predicted topics and actual labels in batches...")
 
-        hits = 1 if is_match else 0
-        total_hits += hits
-        total_extracted += 1 if predicted_topic else 0
-        total_gt += 1 if actual_label else 0
+    clean_preds = [p if p else " " for p in predicted_topics]
+    clean_actuals = [a if a else " " for a in actual_labels]
 
+    pred_embeddings = similarity_model.encode(clean_preds, convert_to_tensor=True, show_progress_bar=True)
+    actual_embeddings = similarity_model.encode(clean_actuals, convert_to_tensor=True, show_progress_bar=True)
+
+    print("Evaluating semantic similarity...")
+    pred_norms = torch.nn.functional.normalize(pred_embeddings, p=2, dim=1)
+    actual_norms = torch.nn.functional.normalize(actual_embeddings, p=2, dim=1)
+    similarities = (pred_norms * actual_norms).sum(dim=1).tolist()
+
+    total_hits = 0
+    total_extracted = 0
+    total_gt = 0
+    total_similarity = 0.0
+    doc_details = []
+
+    for idx in range(len(df)):
+        pred = predicted_topics[idx]
+        actual = actual_labels[idx]
+        score = similarities[idx]
+        is_match = score >= semantic_match_threshold
+
+        doc_details.append((idx, actual, pred, score, is_match))
+
+        if is_match:
+            total_hits += 1
+        if pred:
+            total_extracted += 1
+        if actual:
+            total_gt += 1
+        total_similarity += score
+
+    num_docs = len(df)
+    avg_similarity = total_similarity / num_docs if num_docs > 0 else 0.0
     avg_p = total_hits / total_extracted if total_extracted > 0 else 0.0
     avg_r = total_hits / total_gt if total_gt > 0 else 0.0
     avg_f1 = (2 * avg_p * avg_r) / (avg_p + avg_r) if (avg_p + avg_r) > 0 else 0.0
 
-    save_to_markdown(window_size, d, threshold, max_iter, avg_p, avg_r, avg_f1, doc_details)
+    print("Saving results to markdown...")
+    save_to_markdown(
+        window_size, d, threshold, max_iter, 
+        semantic_match_threshold, avg_p, avg_r, avg_f1, 
+        avg_similarity, doc_details
+    )
+    print("Done!")
+
 
 if __name__ == "__main__":
     main()
