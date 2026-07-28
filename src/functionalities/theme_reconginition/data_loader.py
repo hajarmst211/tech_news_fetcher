@@ -99,9 +99,11 @@ def load_data(path):
     
     return df[['text', 'label']].reset_index(drop=True)
 
+def load_data_raw(path, nrows=1000):
+    return pd.read_csv(path).head(nrows)
 
 if __name__ == "__main__":
     df = load_data(data_path)
     print("data info:", df.info())
-    
+
     print(df.head())

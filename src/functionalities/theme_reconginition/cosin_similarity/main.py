@@ -3,7 +3,10 @@ import os
 from pathlib import Path
 import shutil
 from typing import List, Dict
-
+import csv
+import json
+import os
+import sys
 import kagglehub
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -11,6 +14,11 @@ from tqdm import tqdm
 
 from embeddings import CATEGORY_DESCRIPTIONS, USER_FRIENDLY_NAMES
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(SCRIPT_DIR, '..', 'data', 'cs_papers_api.csv')
+
+sys.path.append(os.path.abspath(os.path.join(SCRIPT_DIR, '..')))
+from data_loader import load_data
 
 class TextEmbedder:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", device=None):
@@ -326,8 +334,7 @@ def print_results(results: list):
 
 
 def pre_train():
-    download_data(verbose=True)
-    sample_data = load_json(number_of_elements=1000)
+    sample_data = load_csv(DATA_PATH, number_of_elements=1000)
     prepare_data(sample_data)
 
 
@@ -428,7 +435,43 @@ def print_predictions(
     print("-" * 55)
 
 
+def load_csv(
+    path: str = "./data/cs_papers_api.csv",
+    number_of_elements=None,
+) -> list:
+    data = []
+    path_obj = Path(path)
+
+    # Resolve path if running the script from inside the 'cosin_similarity' directory
+    if not path_obj.exists():
+        alternative_path = Path("../data/cs_papers_api.csv")
+        if alternative_path.exists():
+            path_obj = alternative_path
+        else:
+            raise FileNotFoundError(
+                f"Could not find CSV file at '{path}' or '{alternative_path.resolve()}'"
+            )
+
+    print(f"Loading data from: {path_obj.resolve()}")
+    with open(path_obj, "r", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for i, row in enumerate(reader):
+            if number_of_elements is not None and i >= number_of_elements:
+                break
+            
+            # Map standard CSV column headers to the structure expected by prepare_data
+            paper = {
+                "id": row.get("id", row.get("paper_id", f"paper_{i}")),
+                "categories": row.get("categories", row.get("category", "uncategorized")),
+                "title": row.get("title", ""),
+                "abstract": row.get("abstract", row.get("summary", ""))
+            }
+            data.append(paper)
+
+    return data
+
 if __name__ == "__main__":
+    '''
     prediction = predict(
         "We present a novel deep learning architecture based on Vision Transformers (ViTs) "
         "for automated segmentation of brain tumors from multi-modal MRI scans. "
@@ -436,3 +479,29 @@ if __name__ == "__main__":
         "fine-grained boundaries while significantly reducing false positives in low-contrast regions."
     )
     print_predictions(prediction, max_categories=5)
+    '''
+    pre_train()
+    embedder = init_embder()
+    category_embeddings = load_or_compute_category_embeddings(
+        embedder, CATEGORY_DESCRIPTIONS
+    )
+
+    prepared_base = Path("./data/prepared/")
+    all_files = list(prepared_base.glob("**/*.txt"))
+
+    if all_files:
+        for file_path in all_files[:10]:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            print(f"\nEvaluating File: {file_path.name}")
+            print(f"True Category  : {file_path.parent.name}")
+            
+            predictions = predict(
+                content, 
+                embedder=embedder, 
+                category_embeddings=category_embeddings
+            )
+            print_predictions(predictions, max_categories=3)
+    else:
+        print("No prepared files found to predict.")
