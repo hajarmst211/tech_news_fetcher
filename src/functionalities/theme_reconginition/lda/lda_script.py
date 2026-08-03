@@ -155,7 +155,8 @@ def main():
         if not doc_bow:
             document_entries.append((i + 1, doc_label, "None (Empty Text)"))
             continue
-            
+
+        # Classifying the documents:    
         topic_distribution = lda_model[doc_bow]
         dominant_topic = sorted(topic_distribution, key=lambda x: x[1], reverse=True)[0]
         dominant_topic_id = dominant_topic[0]
