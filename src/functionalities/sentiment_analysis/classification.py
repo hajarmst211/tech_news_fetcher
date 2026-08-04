@@ -5,7 +5,7 @@ from data_loader import load_data
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
 
@@ -31,7 +31,7 @@ print(f"Vectorization complete. Vocabulary size: {X_train_vec.shape[1]} (took {t
 
 models = {
     "Naive Bayes": MultinomialNB(),
-    "SVM (rbf kernel SVC)": SVC(kernel="rbf", random_state=42),
+    "SVM (LinearSVC)": LinearSVC( max_iter=5000),
     "Decision Tree": DecisionTreeClassifier(max_depth=20, random_state=42)
 }
 
@@ -44,6 +44,9 @@ def get_confidences(model, X):
         proba = model.predict_proba(X)
         return np.max(proba, axis=1) * 100
     decision = model.decision_function(X)
+    if decision.ndim == 1:
+        proba = 1 / (1 + np.exp(-decision))
+        return np.where(proba > 0.5, proba, 1 - proba) * 100
     exp_scores = np.exp(decision - np.max(decision, axis=1, keepdims=True))
     proba = exp_scores / exp_scores.sum(axis=1, keepdims=True)
     return np.max(proba, axis=1) * 100

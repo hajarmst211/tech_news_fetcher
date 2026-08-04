@@ -29,7 +29,7 @@ def compute_confidence(avg_score, label):
         conf = 1.0 - min(1.0, abs(avg_score - 0.05) / 0.1)
     return max(0.0, min(1.0, conf)) * 100
 
-def evaluate_sentiment(text, lemmatizer, acronyms, emoticons, contextual_words):
+def evaluate_sentiment(text, lemmatizer, acronyms, emoticons, contextual_words, custom_lexicon):
     text = str(text).lower()
     for phrase, replacement in contextual_words.items():
         text = text.replace(phrase, replacement)
@@ -53,8 +53,15 @@ def evaluate_sentiment(text, lemmatizer, acronyms, emoticons, contextual_words):
     
     for word, tag in tagged_tokens:
         wn_tag = get_wordnet_pos(tag)
-        if wn_tag:
-            lemma = lemmatizer.lemmatize(word, pos=wn_tag)
+        lemma = lemmatizer.lemmatize(word, pos=wn_tag) if wn_tag else lemmatizer.lemmatize(word)
+        
+        if lemma in custom_lexicon:
+            score += custom_lexicon[lemma]
+            count += 1
+        elif word in custom_lexicon:
+            score += custom_lexicon[word]
+            count += 1
+        elif wn_tag:
             synsets = list(swn.senti_synsets(lemma, wn_tag))
             if synsets:
                 senti_syn = synsets[0]
@@ -79,9 +86,9 @@ def evaluate_sentiment(text, lemmatizer, acronyms, emoticons, contextual_words):
 
 def normalize_label(label):
     label_str = str(label).strip().lower()
-    if label_str in ["positive", "pos", "1", "positive"]:
+    if label_str in ["positive", "pos", "1"]:
         return "positive"
-    elif label_str in ["negative", "neg", "0", "negative"]:
+    elif label_str in ["negative", "neg", "0"]:
         return "negative"
     else:
         return "neutral"
@@ -133,6 +140,74 @@ def run_pipeline(max_samples=1000):
         "not bad": "good",
         "no delay": "fast"
     }
+
+    custom_lexicon = {
+        "great": 0.9,
+        "win": 0.8,
+        "nice": 0.7,
+        "clever": 0.8,
+        "excellent": 0.9,
+        "impressive": 0.8,
+        "amazing": 0.9,
+        "favorite": 0.8,
+        "love": 0.9,
+        "good": 0.7,
+        "trust": 0.8,
+        "reproducible": 0.6,
+        "verifiable": 0.6,
+        "confidence": 0.8,
+        "clarity": 0.7,
+        "honest": 0.7,
+        "valuable": 0.8,
+        "happy": 0.8,
+        "congrats": 0.9,
+        "thank": 0.7,
+        "thanks": 0.7,
+        "redefines": 0.6,
+        "useful": 0.8,
+        "respect": 0.8,
+        "correct": 0.7,
+        "trips": -0.5,
+        "lost": -0.7,
+        "pain": -0.8,
+        "excessive": -0.6,
+        "danger": -0.8,
+        "dangerous": -0.9,
+        "phishing": -0.9,
+        "leaks": -0.8,
+        "attack": -0.8,
+        "abuse": -0.8,
+        "damage": -0.8,
+        "noise": -0.5,
+        "stale": -0.5,
+        "miss": -0.6,
+        "outage": -0.8,
+        "dropped": -0.5,
+        "failure": -0.8,
+        "unorganized": -0.7,
+        "hurt": -0.8,
+        "laid off": -0.9,
+        "expensive": -0.6,
+        "trap": -0.8,
+        "confused": -0.7,
+        "limit": -0.4,
+        "slower": -0.5,
+        "gaps": -0.5,
+        "struggle": -0.7,
+        "vulnerable": -0.8,
+        "fail": -0.8,
+        "banned": -0.6,
+        "wrong": -0.7,
+        "deficit": -0.6,
+        "unsure": -0.4,
+        "reject": -0.6,
+        "rejected": -0.7,
+        "scared": -0.7,
+        "collateral": -0.5,
+        "clash": -0.5,
+        "critical": -0.3,
+        "struggled": -0.7
+    }
     
     print("Execution State: Normalizing ground truth labels...")
     y_true = [normalize_label(label) for label in df['label']]
@@ -143,7 +218,9 @@ def run_pipeline(max_samples=1000):
     print(f"Execution State: Commencing sentiment evaluation of {total_records} records...")
     
     for idx, text in enumerate(df['text']):
-        prediction, confidence = evaluate_sentiment(text, lemmatizer, acronyms, emoticons, contextual_words)
+        prediction, confidence = evaluate_sentiment(
+            text, lemmatizer, acronyms, emoticons, contextual_words, custom_lexicon
+        )
         y_pred.append(prediction)
         
         if len(samples_data) < 100:
