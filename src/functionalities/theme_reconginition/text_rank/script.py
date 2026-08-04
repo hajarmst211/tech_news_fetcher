@@ -56,9 +56,9 @@ def penn_to_wn(tag):
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
 
-def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4, max_iterations=50, max_phrase_length=3):
+def extract_top_topics(text, window_size=5, d=0.85, convergence_threshold=1e-4, max_iterations=50, max_phrase_length=3, num_topics=3):
     if not isinstance(text, str) or not text.strip():
-        return ""
+        return []
 
     tokens = word_tokenize(text)
     tagged = pos_tag(tokens)
@@ -78,7 +78,7 @@ def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4
             vertices.add(word)
 
     if not vertices:
-        return ""
+        return []
 
     graph = {v: set() for v in vertices}
     n = len(cleaned_tokens)
@@ -110,7 +110,7 @@ def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4
         if max_diff < convergence_threshold:
             break
 
-    top_count = max(1, len(vertices) // 3)
+    top_count = max(5, len(vertices) // 3)
     sorted_vertices = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     top_words = set([word for word, score in sorted_vertices[:top_count]])
 
@@ -131,7 +131,7 @@ def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4
 
     unique_candidates = list(set(candidates))
     if not unique_candidates:
-        return ""
+        return []
 
     candidate_scores = {}
     for cand in unique_candidates:
@@ -139,8 +139,8 @@ def extract_single_topic(text, window_size=5, d=0.85, convergence_threshold=1e-4
         candidate_scores[cand] = sum(scores.get(w, 0.0) for w in cand_words)
 
     sorted_candidates = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)
-    return sorted_candidates[0][0]
-
+    
+    return [cand for cand, score in sorted_candidates[:num_topics]]
 
 def save_to_markdown(window_size, d, threshold, max_iter, sim_threshold, avg_p, avg_r, avg_f1, avg_similarity, doc_details):
     filepath = os.path.join(os.path.dirname(__file__), 'textrank_results.md')
@@ -196,14 +196,14 @@ def main():
         text = row[text_col]
         actual_label = str(row[label_col]).strip()
         
-        predicted_topic = extract_single_topic(
+        predicted_topics = extract_top_topics(
             text,
             window_size=window_size,
             d=d,
             convergence_threshold=threshold,
             max_iterations=max_iter
         )
-        predicted_topics.append(predicted_topic)
+        predicted_topics.append(predicted_topics)
         actual_labels.append(actual_label)
 
     print("Encoding predicted topics and actual labels in batches...")
