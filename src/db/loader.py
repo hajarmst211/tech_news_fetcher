@@ -52,6 +52,12 @@ def _normalize_item(record: dict, source_type: str) -> dict:
 
     tags = _extract_tags(raw)
     metrics = _extract_metrics(raw)
+
+    topics = raw.pop("topics", None)
+    if isinstance(topics, str):
+        topics = [t.strip() for t in topics.split(",") if t.strip()]
+    sentiment = raw.pop("sentiment", None)
+
     extra = {k: v for k, v in raw.items() if v is not None and k != "author"}
 
     return {
@@ -65,6 +71,8 @@ def _normalize_item(record: dict, source_type: str) -> dict:
         "content": content,
         "content_hash": content_hash,
         "tags": tags,
+        "topics": topics,
+        "sentiment": sentiment,
         "metrics": metrics,
         "extra": extra,
     }
@@ -115,8 +123,8 @@ def insert_items(source_id: int, records: list[dict], source_type: str) -> int:
                         INSERT INTO items
                             (source_id, external_id, title, summary, url, author,
                              published_at, updated_at, content, content_hash,
-                             tags, metrics, extra)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             tags, topics, sentiment, metrics, extra)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (source_id, external_id) DO NOTHING
                         """,
                         (
@@ -131,6 +139,8 @@ def insert_items(source_id: int, records: list[dict], source_type: str) -> int:
                             norm["content"],
                             norm["content_hash"],
                             norm["tags"],
+                            norm["topics"],
+                            Json(norm["sentiment"]) if norm["sentiment"] else None,
                             Json(norm["metrics"]) if norm["metrics"] else None,
                             Json(norm["extra"]) if norm["extra"] else None,
                         ),
@@ -146,6 +156,60 @@ def insert_items(source_id: int, records: list[dict], source_type: str) -> int:
     if inserted:
         print(f"  [DB] Inserted {inserted}/{len(records)} items")
     return inserted
+
+
+def insert_processed_items(source_id: int, records: list[dict], source_type: str = "") -> dict[str, int]:
+    """Insert enriched items and return {external_id: item_id} for newly inserted rows."""
+    if not records:
+        return {}
+
+    conn = get_conn()
+    item_ids: dict[str, int] = {}
+    try:
+        with conn.cursor() as cur:
+            for rec in records:
+                norm = _normalize_item(rec, source_type)
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO items
+                            (source_id, external_id, title, summary, url, author,
+                             published_at, updated_at, content, content_hash,
+                             tags, topics, sentiment, metrics, extra)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (source_id, external_id) DO NOTHING
+                        RETURNING id, external_id
+                        """,
+                        (
+                            source_id,
+                            norm["external_id"],
+                            norm["title"],
+                            norm["summary"],
+                            norm["url"],
+                            norm["author"],
+                            norm["published_at"],
+                            norm["updated_at"],
+                            norm["content"],
+                            norm["content_hash"],
+                            norm["tags"],
+                            norm["topics"],
+                            Json(norm["sentiment"]) if norm["sentiment"] else None,
+                            Json(norm["metrics"]) if norm["metrics"] else None,
+                            Json(norm["extra"]) if norm["extra"] else None,
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        item_ids[row[1]] = row[0]
+                except psycopg2.Error as e:
+                    print(f"  [DB ERROR] Skipping item {norm.get('external_id')}: {e}")
+        conn.commit()
+    finally:
+        return_conn(conn)
+
+    if item_ids:
+        print(f"  [DB] Inserted {len(item_ids)}/{len(records)} items")
+    return item_ids
 
 
 def insert_vulnerabilities(source_id: int, records: list[dict]) -> int:
@@ -206,8 +270,8 @@ def insert_comments(records: list[dict]) -> int:
                         """
                         INSERT INTO comments
                             (item_id, external_id, author, body_text,
-                             published_at, extra)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                             published_at, sentiment_label, sentiment_score, extra)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (item_id, external_id) DO NOTHING
                         """,
                         (
@@ -216,6 +280,8 @@ def insert_comments(records: list[dict]) -> int:
                             rec.get("author"),
                             rec.get("body_text"),
                             rec.get("published_at"),
+                            rec.get("sentiment_label"),
+                            rec.get("sentiment_score"),
                             Json(rec["extra"]) if rec.get("extra") else None,
                         ),
                     )

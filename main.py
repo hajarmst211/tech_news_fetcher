@@ -63,24 +63,9 @@ def main() -> None:
             str(PROJECT_ROOT / "src" / "fetching_data"),
         ),
         (
-            "Cleaning data",
-            [sys.executable, "general_cleaning.py"],
+            "Processing articles (dedup → clean → summarize → topics → sentiment → insert)",
+            [sys.executable, "process_and_store.py"],
             str(PROJECT_ROOT / "src" / "cleaning"),
-        ),
-        (
-            "Generating summaries",
-            [sys.executable, "summarizer.py"],
-            str(PROJECT_ROOT / "src" / "functionalities" / "summary"),
-        ),
-        (
-            "Extracting themes",
-            [sys.executable, "theme_extractor.py"],
-            str(PROJECT_ROOT / "src" / "functionalities" / "theme_reconginition"),
-        ),
-        (
-            "Analyzing comment sentiment",
-            [sys.executable, "analysis.py"],
-            str(PROJECT_ROOT / "src" / "functionalities" / "sentiment_analysis"),
         ),
     ]
 

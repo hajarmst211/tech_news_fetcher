@@ -37,6 +37,9 @@ def init_db():
 
             migrations = [
                 "ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_status_code INTEGER",
+                "ALTER TABLE items ADD COLUMN IF NOT EXISTS topics TEXT[]",
+                "ALTER TABLE items ADD COLUMN IF NOT EXISTS sentiment JSONB",
+                "CREATE INDEX IF NOT EXISTS idx_items_topics ON items USING GIN (topics)",
             ]
             for migration in migrations:
                 cur.execute(migration)

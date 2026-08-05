@@ -11,7 +11,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src" / "cleaning"))
 
 from api_fetchers import main as fetch_api
 from rss_fetcher import main as fetch_rss
-from general_cleaning import clean_all
+from article_content_fetcher import main as fetch_content
+from process_and_store import process
 
 
 def main() -> None:
@@ -23,8 +24,11 @@ def main() -> None:
     print("\n=== Step 2: Fetching RSS sources ===")
     fetch_rss()
 
-    print("\n=== Step 3: Cleaning and loading into database ===")
-    clean_all()
+    print("\n=== Step 3: Fetching article content ===")
+    fetch_content()
+
+    print("\n=== Step 4: Processing articles (dedup → clean → summarize → topics → sentiment → insert) ===")
+    process()
 
     elapsed = time.time() - t0
     print(f"\nPipeline finished in {elapsed:.1f}s")

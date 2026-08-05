@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS items (
     content         TEXT,
     content_hash    CHAR(64),
     tags            TEXT[],
+    topics          TEXT[],
+    sentiment       JSONB,
     metrics         JSONB,
     extra           JSONB,
     UNIQUE (source_id, external_id)

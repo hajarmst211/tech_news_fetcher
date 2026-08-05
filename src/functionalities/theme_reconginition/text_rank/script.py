@@ -1,17 +1,11 @@
 import os
 import sys
-import pandas as pd
+
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords, wordnet
-from sentence_transformers import SentenceTransformer, util
-import torch
-from tqdm import tqdm
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from data_loader import load_parquet_data, load_data
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'cs_papers_api.csv')
 
@@ -35,9 +29,6 @@ try:
     nltk.data.find('corpora/stopwords')
 except LookupError:
     nltk.download('stopwords', quiet=True)
-
-print("Loading sentence-transformer model...")
-similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def is_valid_pos(tag):
     return tag in ['NN', 'NNS', 'NNP', 'NNPS', 'JJ', 'JJR', 'JJS']
@@ -175,6 +166,17 @@ def save_to_markdown(window_size, d, threshold, max_iter, sim_threshold, avg_p, 
 
 
 def main():
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from data_loader import load_data
+
+    import pandas as pd
+    import torch
+    from sentence_transformers import SentenceTransformer, util
+    from tqdm import tqdm
+
+    print("Loading sentence-transformer model...")
+    similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+
     print("Loading data...")
     df = load_data(DATA_PATH)
     text_col = 'text' if 'text' in df.columns else df.columns[0]
