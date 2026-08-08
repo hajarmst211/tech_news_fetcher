@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Signal — Feed{% endblock %}
+{% block content %}
+<div class="feed-page">
+    <div class="search-bar">
+        <span class="search-prompt">$</span>
+        <input id="search-input" type="text" placeholder="search today's items..." autocomplete="off">
+        <span class="search-hint" id="search-hint"></span>
+    </div>
+
+    <div id="feed-list" class="feed-list">
+        <div class="feed-empty" id="feed-empty">loading today's items...</div>
+    </div>
+</div>
+<script src="{{ url_for('static', filename='js/feed.js') }}"></script>
+{% endblock %}

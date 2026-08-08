@@ -9,10 +9,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "fetching_data"))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "cleaning"))
 
-from api_fetchers import main as fetch_api
-from rss_fetcher import main as fetch_rss
-from article_content_fetcher import main as fetch_content
-from process_and_store import process
+from src.fetching_data.api_fetchers import main as fetch_api
+from src.fetching_data.rss_fetcher import main as fetch_rss
+from src.fetching_data.article_content_fetcher import main as fetch_content
+from src.cleaning.process_and_store import process
 
 
 def main() -> None:

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Signal{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="{{ url_for('feed') }}">
+        <span class="brand-glyph">&gt;_</span>
+        <span class="brand-name">signal</span>
+    </a>
+    <nav class="topnav">
+        <a href="{{ url_for('feed') }}" class="{{ 'active' if request.path == '/' else '' }}">feed</a>
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.path == '/dashboard' else '' }}">dashboard</a>
+    </nav>
+</header>
+<main class="page">
+    {% block content %}{% endblock %}
+</main>
+</body>
+</html>

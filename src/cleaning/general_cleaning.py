@@ -9,6 +9,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from pylatexenc.latex2text import LatexNodes2Text
+
 from db.database import init_db, ensure_source, get_conn, return_conn
 from db.loader import (
     insert_items, 
@@ -17,6 +19,14 @@ from db.loader import (
     insert_comments, 
     update_source_metadata
 )
+
+
+def latex_to_unicode(text: str) -> str:
+    try:
+        converter = LatexNodes2Text(math_mode='text')
+        return converter.latex_to_text(text)
+    except Exception:
+        return text
 
 
 def normalize_date(date_str: str | None) -> str | None:
@@ -66,6 +76,7 @@ def clean_text(text: str, remove_emojis: bool = False) -> str:
     text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
     if remove_emojis:
         text = EMOJI_PATTERN.sub('', text)
+    text = latex_to_unicode(text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
