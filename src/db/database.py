@@ -202,9 +202,10 @@ def top_topics(days: int, limit: int) -> list[dict]:
 
 def distinct_topics() -> list[str]:
     sql = """
-        SELECT DISTINCT unnest(topics) AS topic
-        FROM items
-        WHERE topics IS NOT NULL
+        SELECT DISTINCT unnest(i.topics) AS topic
+        FROM items i
+        INNER JOIN comments c ON c.item_id = i.id
+        WHERE i.topics IS NOT NULL
         ORDER BY topic
     """
     conn = get_conn()
@@ -217,7 +218,7 @@ def distinct_topics() -> list[str]:
     return [r[0] for r in rows]
 
 
-def sentiment_trend(topic: str, days: int) -> dict:
+def sentiment_trend(topics: list[str], days: int) -> dict:
     sql = """
         SELECT
             date_trunc('day', c.published_at)::date AS day,
@@ -228,14 +229,14 @@ def sentiment_trend(topic: str, days: int) -> dict:
         WHERE c.sentiment_label IS NOT NULL
           AND c.published_at IS NOT NULL
           AND c.published_at >= now() - (%(days)s || ' days')::interval
-          AND (%(topic)s = '' OR %(topic)s = ANY(i.topics))
+          AND (coalesce(cardinality(%(topics)s::text[]), 0) = 0 OR i.topics && %(topics)s::text[])
         GROUP BY day, c.sentiment_label
         ORDER BY day
     """
     conn = get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, {"days": days, "topic": topic})
+            cur.execute(sql, {"days": days, "topics": topics})
             rows = cur.fetchall()
     finally:
         return_conn(conn)

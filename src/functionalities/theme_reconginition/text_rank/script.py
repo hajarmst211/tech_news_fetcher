@@ -33,6 +33,21 @@ except LookupError:
 def is_valid_pos(tag):
     return tag in ['NN', 'NNS', 'NNP', 'NNPS', 'JJ', 'JJR', 'JJS']
 
+def is_valid_word(word, tag):
+    """
+    Checks if a token has a valid POS tag, is not a stopword, 
+    contains at least one alphabetic letter, and has a reasonable length.
+    """
+    if not is_valid_pos(tag):
+        return False
+    if word.lower() in stop_words:
+        return False
+    if not any(char.isalpha() for char in word):
+        return False
+    if len(word) < 2:
+        return False
+    return True
+
 def penn_to_wn(tag):
     if tag.startswith('J'):
         return wordnet.ADJ
@@ -65,7 +80,7 @@ def extract_top_topics(text, window_size=5, d=0.85, convergence_threshold=1e-4, 
 
     vertices = set()
     for word, tag in cleaned_tokens:
-        if is_valid_pos(tag) and word not in stop_words:
+        if is_valid_word(word, tag):
             vertices.add(word)
 
     if not vertices:
@@ -75,11 +90,11 @@ def extract_top_topics(text, window_size=5, d=0.85, convergence_threshold=1e-4, 
     n = len(cleaned_tokens)
     for i in range(n):
         word_i, tag_i = cleaned_tokens[i]
-        if not is_valid_pos(tag_i) or word_i in stop_words:
+        if not is_valid_word(word_i, tag_i):
             continue
         for j in range(i + 1, min(i + window_size, n)):
             word_j, tag_j = cleaned_tokens[j]
-            if is_valid_pos(tag_j) and word_j not in stop_words and word_i != word_j:
+            if is_valid_word(word_j, tag_j) and word_i != word_j:
                 graph[word_i].add(word_j)
                 graph[word_j].add(word_i)
 
@@ -190,7 +205,7 @@ def main():
     max_iter = 50
     semantic_match_threshold = 0.45
 
-    predicted_topics = []
+    all_predicted_topics = []
     actual_labels = []
 
     print(f"Extracting topics from {len(df)} documents...")
@@ -198,19 +213,20 @@ def main():
         text = row[text_col]
         actual_label = str(row[label_col]).strip()
         
-        predicted_topics = extract_top_topics(
+        predicted_list = extract_top_topics(
             text,
             window_size=window_size,
             d=d,
             convergence_threshold=threshold,
             max_iterations=max_iter
         )
-        predicted_topics.append(predicted_topics)
+        combined_topics = ", ".join(predicted_list) if predicted_list else ""
+        all_predicted_topics.append(combined_topics)
         actual_labels.append(actual_label)
 
     print("Encoding predicted topics and actual labels in batches...")
 
-    clean_preds = [p if p else " " for p in predicted_topics]
+    clean_preds = [p if p else " " for p in all_predicted_topics]
     clean_actuals = [a if a else " " for a in actual_labels]
 
     pred_embeddings = similarity_model.encode(clean_preds, convert_to_tensor=True, show_progress_bar=True)
@@ -228,7 +244,7 @@ def main():
     doc_details = []
 
     for idx in range(len(df)):
-        pred = predicted_topics[idx]
+        pred = all_predicted_topics[idx]
         actual = actual_labels[idx]
         score = similarities[idx]
         is_match = score >= semantic_match_threshold
@@ -237,9 +253,9 @@ def main():
 
         if is_match:
             total_hits += 1
-        if pred:
+        if pred.strip():
             total_extracted += 1
-        if actual:
+        if actual.strip():
             total_gt += 1
         total_similarity += score
 

@@ -1,24 +1,12 @@
-#!/usr/bin/env python3
-"""Unified article processing stage of the pipeline.
+"""
+ the following steps run, in order:
 
-For every newly fetched article the following steps run, in order:
-
-1. Deduplication   — query the database for existing article URLs and skip any
-                     article whose URL is already stored.
-2. Cleaning        — pass the raw text of new articles through the cleaning
-                     function (HTML/Markdown stripped, emojis removed, dates
-                     normalized).
-3. Summarization   — reuse the summary provided by the source API/feed if one
-                     exists; otherwise generate one with the SGR summarizer.
-4. Topic extraction — extract key topics (keywords/phrases) from the cleaned
-                     text with TextRank.
-5. Sentiment       — if the article has comments, classify each comment with
-                     the SVM model and compute the aggregated sentiment
-                     percentages for the article.
-6. Database insert — save the finalized article (metadata, cleaned content,
-                     summary, topics, aggregate sentiment), its individual
-                     comments with their sentiment labels, and any NVD/HN
-                     records.
+1. Deduplication  
+2. Cleaning      
+3. Summarization  
+4. Topic extraction 
+5. Sentiment analysis  
+6. Database insert  
 """
 import json
 import sys
